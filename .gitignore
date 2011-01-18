@@ -1,0 +1,4 @@
+gigaplus.dist/
+*.o
+skyefs_rpc.h
+skyefs_rpc_*.c
