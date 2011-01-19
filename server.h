@@ -1,11 +1,6 @@
 #ifndef SERVER_H
 #define SERVER_H   
 
-#include <inttypes.h>
-#include <stdio.h>
-
-#include "skyefs_rpc.h"
-
 #define NUM_BACKLOG_CONN 128
 
 struct server_settings {

@@ -1,6 +1,7 @@
 #include "server.h"
 #include "trace.h"
 #include "defaults.h"
+#include "skye_rpc.h"
 
 #include <arpa/inet.h>
 #include <assert.h>
@@ -215,10 +216,7 @@ static void usage(char *program_name)
     printf("USAGE: %s PARAMETERS\n"
            "where PARAMERTERS are,\n"
            "\t-p <port_num> Port used by the server\n"
-           "\t-D <debug_directory> Directory for log files\n"
            "\t-M <mount_point> Mount point on the server\n"
-           "\t-F <server_file> List of servers in the cluster\n"
-           "\t-N <num_servers> Num of servers to use from the list (in -F)\n"
            "\n",program_name);
 }
 

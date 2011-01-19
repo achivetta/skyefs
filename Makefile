@@ -1,5 +1,5 @@
-CFLAGS	:= -Wall -D_FILE_OFFSET_BITS=64 -DDBG_ENABLED
-LDFLAGS	:= -lpthread -lm -lfuse
+CFLAGS	:= -Wall -DDBG_ENABLED -std=gnu99 `pkg-config fuse --cflags`
+LDFLAGS	:= -lpthread -lm -lfuse `pkg-config fuse --libs`
 RPCGENFLAGS := -N -M
 
 CLIENT := skye_client
@@ -15,7 +15,7 @@ HDRS := $(wildcard *.h) $(RPC_H)
 OBJS := $(addsuffix .o, $(basename $(SRCS)))
 
 COMMON_O := trace.o $(RPC_X)_helper.o
-SERVER_O := server.o handlers.o
+SERVER_O := server.o $(RPC_X)_handlers.o
 CLIENT_O :=
 
 all: $(SERVER)
@@ -35,3 +35,6 @@ $(SRCS) : $(HDRS)
 
 clean:
 	/bin/rm -f $(TARGETS) $(RPC_H) $(RPC_C) $(RPC_O) $(OBJS)
+
+tags: $(SRCS) $(HDRS) $(RPC_H) $(RPC_C)
+	ctags $(SRCS) $(HDRS) $(RPC_H) $(RPC_C) /usr/include/rpc/

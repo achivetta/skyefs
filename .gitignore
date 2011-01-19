@@ -2,3 +2,6 @@ gigaplus.dist/
 *.o
 skye_rpc.h
 skye_rpc_*.c
+tags
+skye_client
+skye_server
