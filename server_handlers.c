@@ -20,24 +20,23 @@ bool_t skye_rpc_init_1_svc(bool_t *result, struct svc_req *rqstp)
     return true;
 }
 
-bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
-                              struct svc_req *rqstp)
+bool_t skye_rpc_readdir_1_svc(skye_pathname path, skye_dirlist *result,  struct
+                              svc_req *rqstp)
 {
     assert(result);
-    bzero(result,sizeof(skye_readdir_reply));
 
-    dbg_msg(log_fp, "[%s] recv:readdir(%s)", __func__, arg.path);
+    dbg_msg(log_fp, "[%s] recv:readdir(%s)", __func__, path);
 
-    DIR *dir = opendir(arg.path);
+    DIR *dir = opendir(path);
     if (!dir){
-        dbg_msg(log_fp, "[%s] unable to opendir(%s): %s", __func__, arg.path,
+        dbg_msg(log_fp, "[%s] unable to opendir(%s): %s", __func__, path,
                 strerror(errno));
         result->errnum = errno;
         return true;
     }
 
     result->errnum = 0;
-    result->skye_readdir_reply_u.dlist = NULL;
+    result->skye_dirlist_u.dlist = NULL;
 
     struct dirent *dent;
 
@@ -57,10 +56,10 @@ bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
 
         /* construct pathname of file to stat */
         char path_name[MAX_PATHNAME_LEN];
-        if (snprintf(path_name, sizeof(path_name), "%s/%s", arg.path,
+        if (snprintf(path_name, sizeof(path_name), "%s/%s", path,
                                        dent->d_name) >= sizeof(path_name)){
             dbg_msg(log_fp, "[%s] %s/%s is longer than MAX_PATHNAME_LEN ",
-                    __func__, arg.path, dent->d_name);
+                    __func__, path, dent->d_name);
             free(dnode->name);
             free(dnode);
             continue;
@@ -76,18 +75,18 @@ bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
         }
 
         /* insert at front of list */
-        dnode->next = result->skye_readdir_reply_u.dlist;
-        result->skye_readdir_reply_u.dlist = dnode;
+        dnode->next = result->skye_dirlist_u.dlist;
+        result->skye_dirlist_u.dlist = dnode;
     }
 
     if (errno != 0){
-        dbg_msg(log_fp, "[%s] unable to readdir(%s): %s", __func__, arg.path,
+        dbg_msg(log_fp, "[%s] unable to readdir(%s): %s", __func__, path,
                 strerror(errno));
         result->errnum = errno;
 
         skye_dnode *dnode;
-        while ((dnode = result->skye_readdir_reply_u.dlist) != NULL){
-            result->skye_readdir_reply_u.dlist = dnode->next;
+        while ((dnode = result->skye_dirlist_u.dlist) != NULL){
+            result->skye_dirlist_u.dlist = dnode->next;
             free(dnode->name);
             free(dnode);
         }
@@ -109,3 +108,4 @@ int skye_rpc_prog_1_freeresult (SVCXPRT *transp, xdrproc_t xdr_result,
 
     return 1;
 }
+

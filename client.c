@@ -7,8 +7,8 @@ int main (int argc, char *argv[])
 {
 	CLIENT *clnt;
 	enum clnt_stat retval;
-	skye_readdir_reply result;
-	skye_readdir_req skye_rpc_readdir_1_arg1;
+	skye_dirlist result;
+	skye_pathname path = "./";
     int sock = RPC_ANYSOCK;
 
     bzero(&result,sizeof(result));
@@ -28,14 +28,13 @@ int main (int argc, char *argv[])
 		exit (EXIT_FAILURE);
 	}
 
-    skye_rpc_readdir_1_arg1.path = "./";
-	retval = skye_rpc_readdir_1(skye_rpc_readdir_1_arg1, &result, clnt);
+	retval = skye_rpc_readdir_1(path, &result, clnt);
 	if (retval != RPC_SUCCESS) {
 		clnt_perror (clnt, "call failed");
 	} else if (result.errnum != 0){
         printf("errno: %d\n", result.errnum);
     } else {
-        skye_dnode *dnode = result.skye_readdir_reply_u.dlist;
+        skye_dnode *dnode = result.skye_dirlist_u.dlist;
         while (dnode != NULL){
             printf("%s\n",dnode->name);
             dnode = dnode->next;

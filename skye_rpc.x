@@ -12,8 +12,8 @@
 #define MAX_PATHNAME    256
 #define MAX_BUF_SIZE    4096
 
-typedef string pathname<MAX_PATHNAME>;
-typedef opaque file_data<MAX_BUF_SIZE>;
+typedef string skye_pathname<MAX_PATHNAME>;
+typedef opaque skye_file_data<MAX_BUF_SIZE>;
 
 enum skye_error {
 	SKYE_RPC_ENONE = 0,
@@ -30,17 +30,13 @@ struct skye_timespec {
 	long tv_nsec;
 };
 
-struct skye_readdir_req {
-	pathname path;
-};
-
 struct skye_dnode {
-	pathname name;
+	skye_pathname name;
 	struct stat stbuf;
 	struct skye_dnode *next;
 };
 
-union skye_readdir_reply switch (int errnum) {
+union skye_dirlist switch (int errnum) {
 	case 0:
 		struct skye_dnode *dlist;
 	default:
@@ -52,6 +48,6 @@ union skye_readdir_reply switch (int errnum) {
 program SKYE_RPC_PROG {                 /* program number */
 	version SKYE_RPC_VERSION {          /* version number */
 		bool SKYE_RPC_INIT(void) = 1;
-		skye_readdir_reply SKYE_RPC_READDIR(skye_readdir_req) = 2;
+		skye_dirlist SKYE_RPC_READDIR(skye_pathname) = 2;
 	} = 1;
 } = 522222; /* FIXME: Is this a okay value for program number? */
