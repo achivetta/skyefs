@@ -14,8 +14,8 @@ void ls(char *server, int port, skye_pathname path){
 
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(DEFAULT_PORT);
-    if (inet_pton(AF_INET, DEFAULT_IP, &addr.sin_addr) < 0) {
+    addr.sin_port = htons(port);
+    if (inet_pton(AF_INET, server, &addr.sin_addr) < 0) {
         fprintf(stderr, "ERROR: handling source IP (%s). %s \n",
                 DEFAULT_IP, strerror(errno));
         exit(EXIT_FAILURE);
