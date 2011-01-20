@@ -13,9 +13,9 @@ RPC_SERVER_O = ${RPC_X}_svc.o
 RPC_CLIENT_O = ${RPC_X}_clnt.o
 RPC_O = ${RPC_COMMON_O} ${RPC_SERVER_O} ${RPC_CLIENT_O}
 
-SRCS := $(wildcard *.c)
-HDRS := $(wildcard *.h) $(RPC_H)
-OBJS := $(addsuffix .o, $(basename $(SRCS)))
+SRCS = $(wildcard *.c)
+HDRS = $(wildcard *.h) $(RPC_H)
+OBJS = $(addsuffix .o, $(basename $(SRCS)))
 
 COMMON_O := trace.o $(RPC_X)_helper.o ${RPC_COMMON_O}
 SERVER_O := server.o $(RPC_X)_handlers.o ${RPC_SERVER_O}
