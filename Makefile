@@ -18,7 +18,7 @@ HDRS = $(wildcard *.h) $(RPC_H)
 OBJS = $(addsuffix .o, $(basename $(SRCS)))
 
 COMMON_O := trace.o $(RPC_X)_helper.o ${RPC_COMMON_O}
-SERVER_O := server.o $(RPC_X)_handlers.o ${RPC_SERVER_O}
+SERVER_O := server.o server_handlers.o ${RPC_SERVER_O}
 CLIENT_O := client.c ${RPC_CLIENT_O}
 
 TARGETS = $(SERVER) $(CLIENT)
