@@ -1,7 +1,11 @@
 #ifndef DEFAULTS_H
 #define DEFAULTS_H   
 
-// 
+// client and server settings specific constants
+#define DEFAULT_PORT 55677
+#define DEFAULT_IP "127.0.0.1"
+#define DEFAULT_MOUNT "./"
+
 // The following excerpt is from the /usr/include/fuse/fuse.h
 //
 // IMPORTANT: you should define FUSE_USE_VERSION before including this
@@ -58,13 +62,6 @@
 #define CREATE_MODE     (USER_RW | GRP_RW | OTHER_RW)
 #define CREATE_FLAGS    (O_CREAT | O_APPEND)
 #define CREATE_RDEV     0
-
-// client and server settings specific constants
-//
-#define DEFAULT_CLI_PORT    22222
-#define DEFAULT_SRV_PORT    55555
-#define DEFAULT_MOUNT_POINT "/ux0/giga/s/1"
-//#define DEFAULT_MOUNT_POINT "/tmp/giga/0"
 
 // giga+ specific constants
 #define SPLIT_THRESHOLD          8000 

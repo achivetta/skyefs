@@ -33,6 +33,9 @@ bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
         return true;
     }
 
+    result->errnum = 0;
+    result->skye_readdir_reply_u.dlist = NULL;
+
     struct dirent *dent;
 
     errno = 0;
@@ -40,12 +43,22 @@ bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
         /* create a new dnode */
         skye_dnode *dnode = malloc(sizeof(skye_dnode));
 
+        /* populate filename */
+        dnode->name = strdup(dent->d_name);
+        if (dnode->name == NULL){
+            dbg_msg(log_fp, "[%s] Unable to duplicate string \"%s\". ",
+                    __func__, dent->d_name);
+            free(dnode);
+            continue;
+        }
+
         /* construct pathname of file to stat */
         char path_name[MAX_PATHNAME_LEN];
         if (snprintf(path_name, sizeof(path_name), "%s/%s", arg.path,
                                        dent->d_name) >= sizeof(path_name)){
             dbg_msg(log_fp, "[%s] %s/%s is longer than MAX_PATHNAME_LEN ",
                     __func__, arg.path, dent->d_name);
+            free(dnode->name);
             free(dnode);
             continue;
         }
@@ -54,6 +67,7 @@ bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
         if (lstat(path_name, &dnode->stbuf) < 0){
             dbg_msg(log_fp, "[%s] unable to readdir(%s): %s", __func__, arg.path,
                     strerror(errno));
+            free(dnode->name);
             free(dnode);
             continue;
         }
@@ -63,7 +77,7 @@ bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
         result->skye_readdir_reply_u.dlist = dnode;
     }
 
-    if (errno){
+    if (errno != 0){
         dbg_msg(log_fp, "[%s] unable to readdir(%s): %s", __func__, arg.path,
                 strerror(errno));
         result->errnum = errno;
@@ -71,11 +85,13 @@ bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
         skye_dnode *dnode;
         while ((dnode = result->skye_readdir_reply_u.dlist) != NULL){
             result->skye_readdir_reply_u.dlist = dnode->next;
+            free(dnode->name);
             free(dnode);
         }
 
         return true;
     }
+
 
 	return true;
 }

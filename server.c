@@ -26,8 +26,6 @@
 // FIXME: rpcgen should put this in giga_rpc.h, but it doesn't. Why?
 extern void skye_rpc_prog_1(struct svc_req *rqstp, register SVCXPRT *transp);
 
-static void usage(char *prog_name);
-
 // Methods to handle requests from client connections
 static void * handler_thread(void *arg);
 
@@ -211,24 +209,19 @@ static void server_socket()
     main_select_loop(listen_fd);
 }
 
-static void usage(char *program_name)
-{
-    printf("USAGE: %s PARAMETERS\n"
-           "where PARAMERTERS are,\n"
-           "\t-p <port_num> Port used by the server\n"
-           "\t-M <mount_point> Mount point on the server\n"
-           "\n",program_name);
-}
-
 int main(int argc, char **argv)
 {
-    if (argc < 6) {
-        usage(argv[0]);
+    if (argc == 2) {
+        printf("usage: %s -p <port_number> -M <mount_point>\n",argv[0]);
         exit(EXIT_FAILURE);
     }
 
     // set STDERR non-buffering 
     setbuf(stderr, NULL);
+    log_fp = stderr;
+
+    srv_settings.mount_point = DEFAULT_MOUNT;
+    srv_settings.port_num = DEFAULT_PORT;
 
     char c;
     while (-1 != (c = getopt(argc, argv,
@@ -256,6 +249,11 @@ int main(int argc, char **argv)
 
     // handling SIGINT
     signal(SIGINT, sig_handler);
+
+    if (srv_settings.mount_point && (chdir(srv_settings.mount_point)) < 0){
+        fprintf(stdout, "Cannot chdir(%s): %s",srv_settings.mount_point, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
 
     server_socket(); 
 
