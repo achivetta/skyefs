@@ -21,7 +21,9 @@ COMMON_O := trace.o $(RPC_X)_helper.o ${RPC_COMMON_O}
 SERVER_O := server.o $(RPC_X)_handlers.o ${RPC_SERVER_O}
 CLIENT_O := client.c ${RPC_CLIENT_O}
 
-all: $(SERVER) $(CLIENT)
+TARGETS = $(SERVER) $(CLIENT)
+
+all: $(TARGETS)
 
 $(SERVER) : $(COMMON_O) $(SERVER_O)
 	$(CC) -o $@ $^ $(LDFLAGS)
@@ -36,8 +38,11 @@ $(RPC_H) $(RPC_C) : $(RPC_X).x
 
 $(SRCS) : $(HDRS)
 
-clean:
-	/bin/rm -f $(TARGETS) $(RPC_H) $(RPC_C) $(RPC_O) $(OBJS)
+clean :
+	/bin/rm -f $(TARGETS) $(RPC_H) $(RPC_C) $(OBJS) tags
 
-tags: $(SRCS) $(HDRS) $(RPC_H) $(RPC_C)
+tags : $(SRCS) $(HDRS) $(RPC_H) $(RPC_C)
 	ctags $(SRCS) $(HDRS) $(RPC_H) $(RPC_C) /usr/include/rpc/
+
+git-ignored :
+	git ls-files --others -i --exclude-standard
