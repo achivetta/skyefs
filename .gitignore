@@ -7,3 +7,4 @@ skye_rpc_xdr.c
 tags
 skye_client
 skye_server
+skye-ls
