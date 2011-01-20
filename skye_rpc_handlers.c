@@ -11,18 +11,21 @@
 
 bool_t skye_rpc_init_1_svc(bool_t *result, struct svc_req *rqstp)
 {
-    dbg_msg(log_fp, "[%s] recv:init()", __func__);
+    assert(result);
 
-    bool_t retval = 1;
+    dbg_msg(log_fp, "[%s] recv:init()", __func__);
 
     *result = true;
 
-    return retval;
+    return true;
 }
 
 bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
                               struct svc_req *rqstp)
 {
+    assert(result);
+    bzero(result,sizeof(skye_readdir_reply));
+
     dbg_msg(log_fp, "[%s] recv:readdir(%s)", __func__, arg.path);
 
     DIR *dir = opendir(arg.path);
@@ -41,7 +44,7 @@ bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
     errno = 0;
     while ((dent = readdir(dir)) != NULL){
         /* create a new dnode */
-        skye_dnode *dnode = malloc(sizeof(skye_dnode));
+        skye_dnode *dnode = calloc(sizeof(skye_dnode),1);
 
         /* populate filename */
         dnode->name = strdup(dent->d_name);
@@ -65,7 +68,7 @@ bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
 
         /* stat file */
         if (lstat(path_name, &dnode->stbuf) < 0){
-            dbg_msg(log_fp, "[%s] unable to readdir(%s): %s", __func__, arg.path,
+            dbg_msg(log_fp, "[%s] unable to lstat(%s): %s", __func__, path_name,
                     strerror(errno));
             free(dnode->name);
             free(dnode);
@@ -91,7 +94,6 @@ bool_t skye_rpc_readdir_1_svc(skye_readdir_req arg, skye_readdir_reply *result,
 
         return true;
     }
-
 
 	return true;
 }
