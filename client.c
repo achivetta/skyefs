@@ -11,6 +11,8 @@ int main (int argc, char *argv[])
 	skye_readdir_req skye_rpc_readdir_1_arg1;
     int sock = RPC_ANYSOCK;
 
+    bzero(&result,sizeof(result));
+
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
     addr.sin_port = htons(DEFAULT_PORT);
