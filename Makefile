@@ -2,7 +2,7 @@ CFLAGS	:= -g -Wall -DDBG_ENABLED -std=gnu99 `pkg-config fuse --cflags`
 LDFLAGS	:= -lpthread -lm -lfuse `pkg-config fuse --libs`
 RPCGENFLAGS := -N -M
 
-CLIENT := skye_client
+CLIENT := skye-ls
 SERVER := skye_server
 
 RPC_X = skye_rpc
@@ -19,7 +19,7 @@ OBJS = $(addsuffix .o, $(basename $(SRCS)))
 
 COMMON_O := trace.o $(RPC_X)_helper.o ${RPC_COMMON_O}
 SERVER_O := server.o server_handlers.o ${RPC_SERVER_O}
-CLIENT_O := client.c ${RPC_CLIENT_O}
+CLIENT_O := skye-ls.c ${RPC_CLIENT_O}
 
 TARGETS = $(SERVER) $(CLIENT)
 
