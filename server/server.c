@@ -1,7 +1,7 @@
 #include "server.h"
-#include "trace.h"
-#include "defaults.h"
-#include "skye_rpc.h"
+#include "common/trace.h"
+#include "common/defaults.h"
+#include "common/skye_rpc.h"
 
 #include <arpa/inet.h>
 #include <assert.h>

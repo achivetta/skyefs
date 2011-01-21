@@ -1,5 +1,5 @@
-#include "skye_rpc.h"
-#include "defaults.h"
+#include "common/skye_rpc.h"
+#include "common/defaults.h"
 #include "client.h"
 
 #include <rpc/rpc.h>

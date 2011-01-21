@@ -1,8 +1,9 @@
-#include "skye_rpc.h"
-#include "defaults.h"
+#include "common/skye_rpc.h"
+#include "common/defaults.h"
 
 #include <errno.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 
 void ls(char *server, int port, skye_pathname path){
 	CLIENT *clnt;

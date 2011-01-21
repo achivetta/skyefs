@@ -1,7 +1,7 @@
-#include "trace.h"
-#include "skye_rpc.h"
+#include "common/trace.h"
+#include "common/skye_rpc.h"
 #include "server.h"
-#include "defaults.h"
+#include "common/defaults.h"
 
 #include <assert.h>
 #include <stdbool.h>

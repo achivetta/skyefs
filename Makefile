@@ -1,48 +1,25 @@
-CFLAGS	:= -g -Wall -DDBG_ENABLED -std=gnu99 `pkg-config fuse --cflags`
-LDFLAGS	:= -lpthread -lm -lfuse `pkg-config fuse --libs`
-RPCGENFLAGS := -N -M
-
-RPC_X = skye_rpc
-RPC_H = ${RPC_X}.h
-RPC_C = ${RPC_X}_svc.c ${RPC_X}_clnt.c ${RPC_X}_xdr.c
-RPC_COMMON_O = ${RPC_X}_xdr.o
-RPC_SERVER_O = ${RPC_X}_svc.o
-RPC_CLIENT_O = ${RPC_X}_clnt.o
-RPC_O = ${RPC_COMMON_O} ${RPC_SERVER_O} ${RPC_CLIENT_O}
-
-SRCS = $(wildcard *.c)
-HDRS = $(wildcard *.h) $(RPC_H)
-OBJS = $(addsuffix .o, $(basename $(SRCS)))
-
-COMMON_O := trace.o $(RPC_X)_helper.o ${RPC_COMMON_O}
-SERVER_O := server.o server_handlers.o ${RPC_SERVER_O}
-CLIENT_O := ${RPC_CLIENT_O}
-
-TARGETS = skye-ls skye_client skye_server
+TARGETS = skye_client skye_server
+DIRS	= common client server util #test
 
 all: $(TARGETS)
 
-skye_server : $(COMMON_O) $(SERVER_O)
-	$(CC) -o $@ $^ $(LDFLAGS)
+skye_client : force_look
+	cd client; make
 
-skye_client : $(COMMON_O) $(CLIENT_O) client.o client_operations.o
-	$(CC) -o $@ $^ $(LDFLAGS)
+skye_server : force_look
+	cd server; make
 
-skye-ls : $(COMMON_O) $(CLIENT_O) skye-ls.o
-	$(CC) -o $@ $^ $(LDFLAGS)
-
-$(RPC_O) : $(RPC_C)
-$(RPC_H) $(RPC_C) : $(RPC_X).x
-	rpcgen $(RPCGENFLAGS) $(RPC_X).x
-	rpcgen $(RPCGENFLAGS) -m $(RPC_X).x > $(RPC_X)_svc.c
-
-$(SRCS) : $(HDRS)
+util : force_look
+	cd util; make
 
 clean :
-	/bin/rm -f $(TARGETS) $(RPC_H) $(RPC_C) $(OBJS) tags
+	-for d in $(DIRS); do (cd $$d; $(MAKE) clean ); done
 
-tags : $(SRCS) $(HDRS) $(RPC_H) $(RPC_C)
-	ctags $(SRCS) $(HDRS) $(RPC_H) $(RPC_C) /usr/include/rpc/
+tags : force_look
+	ctags -R ./ /usr/include/rpc/ /usr/include/fuse/
 
 git-ignored :
 	git ls-files --others -i --exclude-standard
+
+force_look :
+	true
