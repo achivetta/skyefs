@@ -21,7 +21,7 @@ $(RPC_H) $(RPC_C) : $(RPC_X).x
 	rpcgen $(RPCGENFLAGS) $(RPC_X).x
 	rpcgen $(RPCGENFLAGS) -m $(RPC_X).x > $(RPC_X)_svc.c
 
-../common.a : $(OBJS)
+../common.a : $(OBJS) $(RPC_O)
 	ar rv ../common.a $?
 	ranlib ../common.a
 
