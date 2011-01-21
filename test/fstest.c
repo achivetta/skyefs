@@ -40,6 +40,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <assert.h>
+#include <dirent.h>
 
 #ifndef HAS_TRUNCATE64
 #define	truncate64	truncate
@@ -78,6 +79,7 @@ enum action {
 	ACTION_TRUNCATE,
 	ACTION_STAT,
 	ACTION_LSTAT,
+    ACTION_READDIR,
 };
 
 #define	TYPE_NONE	0x0000
@@ -119,6 +121,7 @@ static struct syscall_desc syscalls[] = {
 	{ "truncate", ACTION_TRUNCATE, { TYPE_STRING, TYPE_NUMBER, TYPE_NONE } },
 	{ "stat", ACTION_STAT, { TYPE_STRING, TYPE_STRING, TYPE_NONE } },
 	{ "lstat", ACTION_LSTAT, { TYPE_STRING, TYPE_STRING, TYPE_NONE } },
+	{ "readdir", ACTION_READDIR, { TYPE_STRING, TYPE_NONE } },
 	{ NULL, -1, { TYPE_NONE } }
 };
 
@@ -353,6 +356,25 @@ show_stats(struct stat64 *sp, char *what)
 	printf("\n");
 }
 
+static int
+readdir_loop(char *path){
+    struct dirent *dent;
+    DIR *dir = opendir(path);
+
+    if (!dir)
+        return errno;
+
+    errno = 0;
+
+    while ((dent = readdir(dir)) != NULL){
+        printf("%s\n",dent->d_name);
+    }
+
+    if (errno != 0)
+        return errno;
+    return 0;
+}
+
 static unsigned int
 call_syscall(struct syscall_desc *scall, char *argv[])
 {
@@ -487,6 +509,9 @@ call_syscall(struct syscall_desc *scall, char *argv[])
 			return (i);
 		}
 		break;
+    case ACTION_READDIR:
+        rval = readdir_loop(STR(0));
+        break;
 	default:
 		fprintf(stderr, "unsupported syscall\n");
 		exit(1);
