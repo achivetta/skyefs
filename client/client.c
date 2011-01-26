@@ -26,7 +26,8 @@ static struct fuse_opt skye_opts[] = {
 static struct fuse_operations skye_oper = {
     .init      = skye_init,
     .readdir   = skye_readdir,
-    .destroy   = skye_destroy
+    .destroy   = skye_destroy,
+    .getattr   = skye_getattr
 };
 
 int main(int argc, char *argv[])

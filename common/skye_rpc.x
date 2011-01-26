@@ -43,11 +43,19 @@ union skye_dirlist switch (int errnum) {
 		void;
 };
 
+union skye_stat switch (int errnum) {
+	case 0:
+		struct stat stbuf;
+	default:
+		void;
+};
+
 /* RPC definitions */
 
 program SKYE_RPC_PROG {                 /* program number */
 	version SKYE_RPC_VERSION {          /* version number */
 		bool SKYE_RPC_INIT(void) = 1;
 		skye_dirlist SKYE_RPC_READDIR(skye_pathname) = 2;
+		skye_stat SKYE_RPC_GETATTR(skye_pathname) = 3;
 	} = 1;
 } = 522222; /* FIXME: Is this a okay value for program number? */
