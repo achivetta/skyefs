@@ -9,6 +9,47 @@
 #include <errno.h>
 #include <string.h>
 
+typedef struct {
+	  PVFS_object_ref	ref;
+	  PVFS_credentials	creds;
+} pvfs_handle_t;
+
+/* FIXME */
+static void pvfs_gen_credentials(
+   PVFS_credentials *credentials)
+{
+   //credentials->uid = fuse_get_context()->uid;
+   //credentials->gid = fuse_get_context()->gid;
+   credentials->uid = 1000;
+   credentials->gid = 1000;
+}
+
+/* FIXME: this will segfault if "./" is specified as the path */
+static int pvfs_lookup( const char *path, pvfs_handle_t *pfh, 
+				   int32_t follow_link )
+{
+   PVFS_sysresp_lookup lk_response;
+   int ret;
+
+   /* we don't have to do a PVFS_util_resolve
+	* because FUSE resolves the path for us
+	*/
+
+   pvfs_gen_credentials(&pfh->creds);
+
+   memset(&lk_response, 0, sizeof(lk_response));
+   ret = PVFS_sys_lookup(srv_settings.fs_id, (char *)path, &pfh->creds,
+                         &lk_response, follow_link, PVFS_HINT_NULL);
+   if ( ret < 0 ) {
+	  return ret;
+   }
+
+   pfh->ref.handle = lk_response.ref.handle;
+   pfh->ref.fs_id  = srv_settings.fs_id;
+
+   return 0;
+}
+
 bool_t skye_rpc_init_1_svc(bool_t *result, struct svc_req *rqstp)
 {
     assert(result);
@@ -20,79 +61,70 @@ bool_t skye_rpc_init_1_svc(bool_t *result, struct svc_req *rqstp)
     return true;
 }
 
+#define MAX_NUM_DIRENTS 25
+
 bool_t skye_rpc_readdir_1_svc(skye_pathname path, skye_dirlist *result,  struct
                               svc_req *rqstp)
 {
     assert(result);
+    int ret;
 
     dbg_msg(log_fp, "[%s] recv:readdir(%s)", __func__, path);
 
-    DIR *dir = opendir(path);
-    if (!dir){
-        dbg_msg(log_fp, "[%s] unable to opendir(%s): %s", __func__, path,
-                strerror(errno));
-        result->errnum = errno;
+    pvfs_handle_t pfh;
+
+    ret = pvfs_lookup( path, &pfh, PVFS2_LOOKUP_LINK_FOLLOW );
+    if ( ret < 0 ){
+        result->errnum = -ret;
         return true;
     }
 
     result->errnum = 0;
     result->skye_dirlist_u.dlist = NULL;
 
-    struct dirent *dent;
+    /* while we keep maxing out our response size... */
+    int pvfs_dirent_incount = MAX_NUM_DIRENTS;
+    PVFS_ds_position token = 0;
+    PVFS_sysresp_readdir rd_response;
+    do {
+        memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
 
-    errno = 0;
-    while ((dent = readdir(dir)) != NULL){
-        /* create a new dnode */
-        skye_dnode *dnode = calloc(sizeof(skye_dnode),1);
-
-        /* populate filename */
-        dnode->name = strdup(dent->d_name);
-        if (dnode->name == NULL){
-            dbg_msg(log_fp, "[%s] Unable to duplicate string \"%s\". ",
-                    __func__, dent->d_name);
-            free(dnode);
-            continue;
+        ret = PVFS_sys_readdir(pfh.ref, (!token ? PVFS_READDIR_START : token),
+                               pvfs_dirent_incount, &pfh.creds, &rd_response,
+                               PVFS_HINT_NULL);
+        if(ret < 0){
+            result->errnum = -ret;
+            return true;
         }
 
-        /* construct pathname of file to stat */
-        char path_name[MAX_PATHNAME_LEN];
-        if (snprintf(path_name, sizeof(path_name), "%s/%s", path,
-                                       dent->d_name) >= sizeof(path_name)){
-            dbg_msg(log_fp, "[%s] %s/%s is longer than MAX_PATHNAME_LEN ",
-                    __func__, path, dent->d_name);
-            free(dnode->name);
-            free(dnode);
-            continue;
+        /* for each returned file */
+        for(int i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
+            /* create a new dnode */
+            skye_dnode *dnode = calloc(sizeof(skye_dnode),1);
+
+            char *cur_file = rd_response.dirent_array[i].d_name;
+
+            /* populate filename */
+            dnode->name = strdup(cur_file);
+            if (dnode->name == NULL){
+                dbg_msg(log_fp, "[%s] Unable to duplicate string \"%s\". ",
+                        __func__, cur_file);
+                free(dnode);
+                continue;
+            }
+
+            /* insert at front of list */
+            dnode->next = result->skye_dirlist_u.dlist;
+            result->skye_dirlist_u.dlist = dnode;
         }
 
-        /* stat file */
-        if (lstat(path_name, &dnode->stbuf) < 0){
-            dbg_msg(log_fp, "[%s] unable to lstat(%s): %s", __func__, path_name,
-                    strerror(errno));
-            free(dnode->name);
-            free(dnode);
-            continue;
+        token += rd_response.pvfs_dirent_outcount;
+
+        if (rd_response.pvfs_dirent_outcount) {
+            free(rd_response.dirent_array);
+            rd_response.dirent_array = NULL;
         }
-
-        /* insert at front of list */
-        dnode->next = result->skye_dirlist_u.dlist;
-        result->skye_dirlist_u.dlist = dnode;
-    }
-
-    if (errno != 0){
-        dbg_msg(log_fp, "[%s] unable to readdir(%s): %s", __func__, path,
-                strerror(errno));
-        result->errnum = errno;
-
-        skye_dnode *dnode;
-        while ((dnode = result->skye_dirlist_u.dlist) != NULL){
-            result->skye_dirlist_u.dlist = dnode->next;
-            free(dnode->name);
-            free(dnode);
-        }
-
-        return true;
-    }
+    } while (rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
 
 	return true;
 }

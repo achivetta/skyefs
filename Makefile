@@ -1,7 +1,7 @@
 TARGETS = skye_client skye_server
 DIRS	= common client server util #test
 
-all: $(TARGETS)
+all: $(TARGETS) util
 
 $(TARGETS) : common
 
@@ -21,7 +21,7 @@ clean :
 	@for d in $(DIRS); do (cd $$d; $(MAKE) clean ); done
 
 tags : force_look
-	ctags -R ./ /usr/include/rpc/ /usr/include/fuse/
+	ctags -R ./ /usr/include/rpc/ /usr/include/fuse/ /usr/include/pvfs2*
 
 git-ignored :
 	git ls-files --others -i --exclude-standard

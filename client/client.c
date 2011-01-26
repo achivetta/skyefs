@@ -15,22 +15,10 @@ struct client_options client_options;
 /** macro to define options */
 #define SKYE_OPT_KEY(t, p, v) { t, offsetof(struct client_options, p), v }
 
-/** keys for FUSE_OPT_ options */
-enum
-{
-   KEY_VERSION,
-   KEY_HELP,
-};
-
-static struct fuse_opt skye_opts[] =
-{
+static struct fuse_opt skye_opts[] = {
     SKYE_OPT_KEY("host=%s", host, 0),
     SKYE_OPT_KEY("port=%s", port, 0),
 
-    FUSE_OPT_KEY("-V",             KEY_VERSION),
-    FUSE_OPT_KEY("--version",      KEY_VERSION),
-    FUSE_OPT_KEY("-h",             KEY_HELP),
-    FUSE_OPT_KEY("--help",         KEY_HELP),
     FUSE_OPT_END
 };
 

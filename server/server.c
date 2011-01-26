@@ -23,6 +23,12 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <pvfs2.h>
+#include <pvfs2-sysint.h>
+#include <pvfs2-debug.h>
+
+struct server_settings srv_settings;
+
 // FIXME: rpcgen should put this in giga_rpc.h, but it doesn't. Why?
 extern void skye_rpc_prog_1(struct svc_req *rqstp, register SVCXPRT *transp);
 
@@ -197,6 +203,121 @@ static void set_sockopt_server(int sock_fd)
     return;
 }
 
+/* from pvfs2fuse.c:main */
+static int pvfs_connection(char *fs_spec){
+    int ret = 0;
+    struct PVFS_sys_mntent *me = &srv_settings.mntent;
+    char *cp;
+    int cur_server;
+
+    /* the following is copied from PVFS_util_init_defaults()
+       in fuse/lib/pvfs2-util.c */
+
+    /* initialize pvfs system interface */
+    ret = PVFS_sys_initialize(GOSSIP_NO_DEBUG);
+    if (ret < 0)
+    {
+        return(ret);
+    }
+
+    /* the following is copied from PVFS_util_parse_pvfstab()
+       in fuse/lib/pvfs2-util.c */
+    memset( me, 0, sizeof(srv_settings.mntent) );
+
+    /* Enable integrity checks by default */
+    me->integrity_check = 1;
+    /* comma-separated list of ways to contact a config server */
+    me->num_pvfs_config_servers = 1;
+
+    for (cp=fs_spec; *cp; cp++)
+        if (*cp == ',')
+            ++me->num_pvfs_config_servers;
+
+    /* allocate room for our copies of the strings */
+    me->pvfs_config_servers =
+        malloc(me->num_pvfs_config_servers *
+               sizeof(*me->pvfs_config_servers));
+    if (!me->pvfs_config_servers)
+        exit(-1);
+    memset(me->pvfs_config_servers, 0,
+           me->num_pvfs_config_servers * sizeof(*me->pvfs_config_servers));
+
+    me->mnt_dir = NULL;
+    me->mnt_opts = NULL;
+
+    cp = fs_spec;
+    cur_server = 0;
+    for (;;) {
+        char *tok;
+        int slashcount;
+        char *slash;
+        char *last_slash;
+
+        tok = strsep(&cp, ",");
+        if (!tok) break;
+
+        slash = tok;
+        slashcount = 0;
+        while ((slash = index(slash, '/')))
+        {
+            slash++;
+            slashcount++;
+        }
+        if (slashcount != 3)
+        {
+            fprintf(stderr,"Error: invalid FS spec: %s\n",
+                    fs_spec);
+            exit(-1);
+        }
+
+        /* find a reference point in the string */
+        last_slash = rindex(tok, '/');
+        *last_slash = '\0';
+
+        /* config server and fs name are a special case, take one 
+         * string and split it in half on "/" delimiter
+         */
+        me->pvfs_config_servers[cur_server] = strdup(tok);
+        if (!me->pvfs_config_servers[cur_server])
+            exit(-1);
+
+        ++last_slash;
+
+        if (cur_server == 0) {
+            me->pvfs_fs_name = strdup(last_slash);
+            if (!me->pvfs_fs_name)
+                exit(-1);
+        } else {
+            if (strcmp(last_slash, me->pvfs_fs_name) != 0) {
+                fprintf(stderr,
+                        "Error: different fs names in server addresses: %s\n",
+                        fs_spec);
+                exit(-1);
+            }
+        }
+        ++cur_server;
+    }
+
+    /* FIXME flowproto should be an option */
+    me->flowproto = FLOWPROTO_DEFAULT;
+
+    /* FIXME encoding should be an option */
+    me->encoding = ENCODING_DEFAULT;
+
+    /* FIXME default_num_dfiles should be an option */
+
+    ret = PVFS_sys_fs_add(me);
+    if( ret < 0 )
+    {
+        PVFS_perror("Could not add mnt entry", ret);
+        return(-1);
+    }
+    srv_settings.fs_id = me->fs_id;
+
+    return ret;
+
+}
+
 static void server_socket()
 {
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -212,7 +333,7 @@ static void server_socket()
 int main(int argc, char **argv)
 {
     if (argc == 2) {
-        printf("usage: %s -p <port_number> -M <mount_point>\n",argv[0]);
+        printf("usage: %s -p <port_number> -f <pvfs_server>\n",argv[0]);
         exit(EXIT_FAILURE);
     }
 
@@ -220,24 +341,20 @@ int main(int argc, char **argv)
     setbuf(stderr, NULL);
     log_fp = stderr;
 
-    srv_settings.mount_point = DEFAULT_MOUNT;
+    char * fs_spec = NULL;
     srv_settings.port_num = DEFAULT_PORT;
 
     char c;
     while (-1 != (c = getopt(argc, argv,
                              "p:"           // port number
-                             "M:"           // mount point for server "root"
+                             "f:"           // mount point for server "root"
            ))) {
         switch(c) {
             case 'p':
                 srv_settings.port_num = atoi(optarg);
                 break;
-            case 'M':
-                srv_settings.mount_point = 
-                    (char*)malloc(sizeof(char)*MAX_PATHNAME_LEN);
-                if (srv_settings.mount_point == NULL)
-                    err_sys("[%s] ERROR: malloc() mount_point.", __func__);
-                strcpy(srv_settings.mount_point, optarg);
+            case 'f':
+                fs_spec = strdup(optarg);
                 break;
             default:
                 fprintf(stdout, "Illegal parameter: %c\n", c);
@@ -247,13 +364,13 @@ int main(int argc, char **argv)
 
     }
 
+    if (!(fs_spec || (fs_spec = strdup(DEFAULT_PVFS_FS) )))
+        err_sys("[%s] ERROR: malloc() mount_point.", __func__);
+
     // handling SIGINT
     signal(SIGINT, sig_handler);
 
-    if (srv_settings.mount_point && (chdir(srv_settings.mount_point)) < 0){
-        fprintf(stdout, "Cannot chdir(%s): %s",srv_settings.mount_point, strerror(errno));
-        exit(EXIT_FAILURE);
-    }
+    pvfs_connection(fs_spec);
 
     server_socket(); 
 

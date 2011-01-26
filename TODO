@@ -1,2 +1,2 @@
-Move code into three directories: server, client, common
-	see: http://owen.sj.ca.us/~rk/howto/slides/make/slides/makerecurs.html
+Does SunRPC serialize requests across the wire?
+Is libpvfs multithreaded?

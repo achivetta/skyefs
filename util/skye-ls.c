@@ -48,7 +48,7 @@ int main (int argc, char *argv[])
 {
     char *server = DEFAULT_IP;
     int port = DEFAULT_PORT;
-    skye_pathname path = DEFAULT_MOUNT;
+    skye_pathname path = "/";
 
     char c;
     while (-1 != (c = getopt(argc, argv,

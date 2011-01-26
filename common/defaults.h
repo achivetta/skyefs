@@ -5,6 +5,7 @@
 #define DEFAULT_PORT 55677
 #define DEFAULT_IP "127.0.0.1"
 #define DEFAULT_MOUNT "./"
+#define DEFAULT_PVFS_FS "tcp://localhost:3334/pvfs2-fs"
 
 // The following excerpt is from the /usr/include/fuse/fuse.h
 //
