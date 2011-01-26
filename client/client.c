@@ -1,6 +1,6 @@
 #include "common/defaults.h"
 #include "client.h"
-#include "client_operations.h"
+#include "operations.h"
 
 #include <stdio.h>
 #include <string.h>
