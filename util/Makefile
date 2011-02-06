@@ -1,6 +1,6 @@
 include ../Makefile.inc
 
-CFLAGS += -I..
+CFLAGS += -iquote ..
 LDFLAGS += -lpthread `pkg-config fuse --libs`
 
 TARGETS = skye-ls

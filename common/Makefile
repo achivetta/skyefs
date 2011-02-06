@@ -1,6 +1,6 @@
 include ../Makefile.inc
 
-CFLAGS += -I..
+CFLAGS += -iquote ..
 LDFLAGS += `pkg-config fuse --libs`
 
 RPCGENFLAGS := -N -M
