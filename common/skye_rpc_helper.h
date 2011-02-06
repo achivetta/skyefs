@@ -6,6 +6,6 @@
 #include <sys/statvfs.h>
 #include <inttypes.h>
 
-bool_t xdr_stat(XDR *xdrs, struct stat *objp);
+bool_t xdr_PVFS_object_ref(XDR *xdrs, PVFS_object_ref *objp);
 
 #endif /* GIGA_RPC_HELPER_H */

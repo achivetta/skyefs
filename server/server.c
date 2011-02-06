@@ -45,6 +45,7 @@ static uint32_t conn_fd_table[FD_SETSIZE];
 
 static void sig_handler(const int sig)
 {
+    (void)sig;
     printf("SIGINT handled.\n");
     exit(1);
 }

@@ -2,39 +2,20 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 
+#include <pvfs2-types.h>
+
 #include "skye_rpc.h"
 #include "skye_rpc_helper.h"
 
-typedef unsigned int uint_t;
-typedef unsigned long ulong_t;
-
-bool_t xdr_stat(XDR *xdrs, struct stat *objp)
+/**
+ * DANGER, WILL ROBINSON!: this depends on the internal details of
+ * PVFS_object_ref and could break in newer/older PVFS versions
+ */
+bool_t xdr_PVFS_object_ref(XDR *xdrs, PVFS_object_ref *objp)
 {
-    if(!xdr_u_int (xdrs, (uint_t *)&objp->st_dev))
+    if (!xdr_uint64_t(xdrs, (uint64_t *)&objp->handle))
         return FALSE;
-    if(!xdr_u_int (xdrs, (uint_t *)&objp->st_ino))
-        return FALSE;
-    if(!xdr_u_int (xdrs, (uint_t *)&objp->st_mode))
-        return FALSE;
-    if(!xdr_u_int (xdrs, (uint_t *)&objp->st_nlink))
-        return FALSE;
-    if(!xdr_u_int (xdrs, (uint_t *)&objp->st_uid))
-        return FALSE;
-    if(!xdr_u_int (xdrs, (uint_t *)&objp->st_gid))
-        return FALSE;
-    if(!xdr_u_int (xdrs, (uint_t *)&objp->st_rdev))
-        return FALSE;
-    if(!xdr_u_int (xdrs, (uint_t *)&objp->st_size))
-        return FALSE;
-    if(!xdr_u_int (xdrs, (uint_t *)&objp->st_blksize))
-        return FALSE;
-    if(!xdr_u_int (xdrs, (uint_t *)&objp->st_blocks))
-        return FALSE;
-    if(!xdr_skye_timespec (xdrs, &objp->st_atime)) 
-        return FALSE;
-    if(!xdr_skye_timespec (xdrs, &objp->st_mtime))
-        return FALSE;
-    if(!xdr_skye_timespec (xdrs, &objp->st_ctime))
+    if (!xdr_uint32_t(xdrs, (uint32_t *)&objp->fs_id))
         return FALSE;
     return TRUE;
 }
