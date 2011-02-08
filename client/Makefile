@@ -1,7 +1,7 @@
 include ../Makefile.inc
 
 CFLAGS += -iquote ..
-LDFLAGS += -lpthread `pkg-config fuse --libs`
+LDFLAGS += -lpthread -lpvfs2 `pkg-config fuse --libs`
 
 TARGETS = ../skye_client
 
