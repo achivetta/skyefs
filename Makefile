@@ -1,5 +1,5 @@
 TARGETS = skye_client skye_server
-DIRS	= common client server util #test
+DIRS	= common client server util test
 
 all: $(TARGETS) util
 
@@ -17,6 +17,9 @@ skye_server : force_look
 util : force_look
 	@cd util; make
 
+test : force_look
+	@cd test; make
+
 clean :
 	@for d in $(DIRS); do (cd $$d; $(MAKE) clean ); done
 
@@ -27,4 +30,4 @@ git-ignored :
 	git ls-files --others -i --exclude-standard
 
 force_look :
-	true
+	@true
