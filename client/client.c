@@ -21,6 +21,12 @@ struct PVFS_sys_mntent pvfs_mntent;
 PVFS_fs_id pvfs_fsid;
 CLIENT *rpc_client;
 
+static int pvfs_connect();
+static int rpc_connect();
+static void rpc_disconnect();
+static void* skye_init(struct fuse_conn_info *conn);
+static void skye_destroy(void *);
+
 /** macro to define options */
 #define SKYE_OPT_KEY(t, p, v) { t, offsetof(struct client_options, p), v }
 
@@ -34,13 +40,11 @@ static struct fuse_opt skye_opts[] = {
 
 /** This tells FUSE how to do every operation */
 static struct fuse_operations skye_oper = {
+    .init      = skye_init,
+    .destroy   = skye_destroy,
     .getattr   = skye_getattr,
     .readdir   = skye_readdir
 };
-
-static int pvfs_connect();
-static int rpc_connect();
-static void rpc_disconnect();
 
 int main(int argc, char *argv[])
 {
@@ -57,15 +61,25 @@ int main(int argc, char *argv[])
     if (!client_options.host) client_options.host = DEFAULT_IP;
     if (!client_options.port) client_options.port = DEFAULT_PORT;
 
-    pvfs_connect();
-    rpc_connect();
-
     ret = fuse_main(args.argc, args.argv, &skye_oper, NULL);
 
     fuse_opt_free_args(&args);
-    rpc_disconnect();
 
     return ret;
+}
+
+static void* skye_init(struct fuse_conn_info *conn) 
+{
+    (void)conn;
+    pvfs_connect();
+    rpc_connect();
+    return NULL;
+}
+
+static void skye_destroy(void * unused)
+{
+    (void)unused;
+    rpc_disconnect();
 }
 
 static int pvfs_connect()
