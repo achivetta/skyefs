@@ -105,14 +105,18 @@ int skye_readdir(char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
     (void)offset;
     (void)fi;
 
+    PVFS_object_ref ref;
     int ret;
-    PVFS_sysresp_readdir rd_response;
+
+    if ( (ret = resolve(path, &ref)) < 0 )
+        return ret;
+
+    return pvfs_readdir(&ref, buf, filler);
+
+    /* Giga+ version lies below 
     unsigned int pvfs_dirent_incount = 32; // reasonable chank size
     PVFS_ds_position token = 0;
-
-    PVFS_object_ref ref;
-    resolve(path, &ref);
-
+    PVFS_sysresp_readdir rd_response;
     do {
         unsigned int i;
 
@@ -125,6 +129,7 @@ int skye_readdir(char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
 
         for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
             ref.handle = rd_response.dirent_array[i].handle; 
+            // FIXME: error handleing
             pvfs_readdir(&ref, buf, filler);
         }
         token += rd_response.pvfs_dirent_outcount;
@@ -135,8 +140,7 @@ int skye_readdir(char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
         }
 
     } while (rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
-
-    return 0;
+    */
 }
 
 /* function body taken from pvfs2fuse.c */
