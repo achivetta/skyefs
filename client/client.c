@@ -34,8 +34,8 @@ static struct fuse_opt skye_opts[] = {
 
 /** This tells FUSE how to do every operation */
 static struct fuse_operations skye_oper = {
-    .readdir   = skye_readdir,
-    .getattr   = skye_getattr
+    .getattr   = skye_getattr,
+    .readdir   = skye_readdir
 };
 
 static int pvfs_connect();
