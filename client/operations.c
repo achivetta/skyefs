@@ -7,6 +7,8 @@
 #include <arpa/inet.h>
 #include <errno.h>
 
+#define pvfs2errno(n) (-1)*(PVFS_get_errno_mapping(n))
+
 static PVFS_credentials credentials = {
     .uid = 1000,
     .gid = 1000
@@ -45,7 +47,7 @@ static int resolve(char* pathname, PVFS_object_ref* ref)
     ret = PVFS_sys_lookup(pvfs_fsid, (char *)"/", &credentials, &lk_response,
                           PVFS2_LOOKUP_LINK_NO_FOLLOW, PVFS_HINT_NULL);
     if ( ret < 0 )
-        return ret;
+        return pvfs2errno(ret);
 
     *ref = lk_response.ref;
 
@@ -78,7 +80,7 @@ static int pvfs_readdir(PVFS_object_ref *ref, void *buf, fuse_fill_dir_t filler)
                                 pvfs_dirent_incount, &credentials, &rd_response,
                                 PVFS_HINT_NULL);
         if (ret < 0)
-            return ret;
+            return pvfs2errno(ret);
 
         for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
             cur_file = rd_response.dirent_array[i].d_name;
@@ -100,6 +102,9 @@ static int pvfs_readdir(PVFS_object_ref *ref, void *buf, fuse_fill_dir_t filler)
 
 int skye_readdir(char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
                  struct fuse_file_info *fi){
+    (void)offset;
+    (void)fi;
+
     int ret;
     PVFS_sysresp_readdir rd_response;
     unsigned int pvfs_dirent_incount = 32; // reasonable chank size
@@ -109,7 +114,6 @@ int skye_readdir(char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
     resolve(path, &ref);
 
     do {
-        char *cur_file = NULL;
         unsigned int i;
 
         memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
@@ -117,7 +121,7 @@ int skye_readdir(char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
                                pvfs_dirent_incount, &credentials, &rd_response,
                                PVFS_HINT_NULL);
         if (ret < 0)
-            return ret;
+            return pvfs2errno(ret);
 
         for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
             ref.handle = rd_response.dirent_array[i].handle; 
@@ -136,7 +140,7 @@ int skye_readdir(char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
 }
 
 /* function body taken from pvfs2fuse.c */
-static int pvfs_stat(PVFS_object_ref *ref, struct stat *stbuf)
+static int pvfs_getattr(PVFS_object_ref *ref, struct stat *stbuf)
 {
     PVFS_sysresp_getattr getattr_response;
     PVFS_sys_attr*	attrs;
@@ -149,7 +153,7 @@ static int pvfs_stat(PVFS_object_ref *ref, struct stat *stbuf)
     ret = PVFS_sys_getattr(*ref, PVFS_ATTR_SYS_ALL_NOHINT, &credentials,
                            &getattr_response, PVFS_HINT_NULL);
     if ( ret < 0 )
-        return ret;
+        return pvfs2errno(ret);
 
     memset(stbuf, 0, sizeof(struct stat));
 
@@ -269,7 +273,7 @@ int skye_getattr(char *path, struct stat *stbuf)
     if ((ret = resolve(path, &ref)) < 0)
         return ret;
 
-    if ((ret = pvfs_stat(&ref, stbuf)) < 0)
+    if ((ret = pvfs_getattr(&ref, stbuf)) < 0)
         return ret;
 
     return 0;

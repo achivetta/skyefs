@@ -37,7 +37,7 @@ bool_t skye_rpc_lookup_1_svc(PVFS_object_ref parent, skye_pathname path,
                               &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
     if ( ret < 0 ) {
-        result->errnum = ret;
+        result->errnum = -1 * PVFS_get_errno_mapping(ret);
         return true;
     }
 
