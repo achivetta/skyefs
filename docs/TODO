@@ -1,2 +1,3 @@
 Does SunRPC serialize requests across the wire?
 Is libpvfs multithreaded?
+RPC needs to pass credentials

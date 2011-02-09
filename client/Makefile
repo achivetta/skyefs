@@ -7,7 +7,7 @@ TARGETS = ../skye_client
 
 all: $(TARGETS)
 
-$(SRCS) : $(HDRS)
+$(OBJS) : $(HDRS)
 
 ../skye_client : $(OBJS)
 	$(CC) -o $@ $^ ../common.a $(LDFLAGS)

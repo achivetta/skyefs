@@ -41,8 +41,7 @@ bool_t skye_rpc_lookup_1_svc(PVFS_object_ref parent, skye_pathname path,
         return true;
     }
 
-    result->skye_lookup_u.ref.handle = lk_response.ref.handle;
-    result->skye_lookup_u.ref.fs_id  = srv_settings.fs_id;
+    result->skye_lookup_u.ref = lk_response.ref;
     result->errnum = 0;
 
     return true;;

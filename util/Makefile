@@ -7,7 +7,7 @@ TARGETS = skye-ls
 
 all: $(TARGETS)
 
-$(SRCS) : $(HDRS)
+$(OBJS) : $(HDRS)
 
 skye-ls : skye-ls.o
 	$(CC) -o $@ $^ ../common.a $(LDFLAGS)

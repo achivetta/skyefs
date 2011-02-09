@@ -15,7 +15,7 @@ TARGETS = ../common.a
 
 all: $(TARGETS)
 
-$(SRCS) : $(HDRS)
+$(OBJS) : $(HDRS)
 
 $(RPC_H) $(RPC_C) : $(RPC_X).x
 	rpcgen $(RPCGENFLAGS) $(RPC_X).x
