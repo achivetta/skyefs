@@ -7,12 +7,10 @@
 #include <arpa/inet.h>
 #include <errno.h>
 
-/* FIXME */
-static void pvfs_gen_credentials(PVFS_credentials *credentials)
-{ 
-    credentials->uid = 1000;
-    credentials->gid = 1000;
-}
+static PVFS_credentials credentials = {
+    .uid = 1000,
+    .gid = 1000
+};
 
 /** Updates parent_ref to point to the specified child */
 static int lookup(PVFS_object_ref* ref, char* pathname)
@@ -40,13 +38,11 @@ static int resolve(char* pathname, PVFS_object_ref* ref)
 {
 
     PVFS_sysresp_lookup lk_response;
-    PVFS_credentials creds;
     int ret;
 
-    pvfs_gen_credentials(&creds);
     memset(&lk_response, 0, sizeof(lk_response));
 
-    ret = PVFS_sys_lookup(pvfs_fsid, (char *)"/", &creds, &lk_response,
+    ret = PVFS_sys_lookup(pvfs_fsid, (char *)"/", &credentials, &lk_response,
                           PVFS2_LOOKUP_LINK_NO_FOLLOW, PVFS_HINT_NULL);
     if ( ret < 0 )
         return ret;
@@ -66,27 +62,76 @@ static int resolve(char* pathname, PVFS_object_ref* ref)
     return 0;
 }
 
+static int pvfs_readdir(PVFS_object_ref *ref, void *buf, fuse_fill_dir_t filler)
+{
+    int ret;
+    PVFS_sysresp_readdir rd_response;
+    unsigned int pvfs_dirent_incount = 32; // reasonable chank size
+    PVFS_ds_position token = 0;
+
+    do {
+        char *cur_file = NULL;
+        unsigned int i;
+
+        memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
+        ret = PVFS_sys_readdir(*ref, (!token ? PVFS_READDIR_START : token),
+                                pvfs_dirent_incount, &credentials, &rd_response,
+                                PVFS_HINT_NULL);
+        if (ret < 0)
+            return ret;
+
+        for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
+            cur_file = rd_response.dirent_array[i].d_name;
+
+            if (filler(buf, cur_file, NULL, 0))
+                break;
+        }
+        token += rd_response.pvfs_dirent_outcount;
+
+        if (rd_response.pvfs_dirent_outcount) {
+            free(rd_response.dirent_array);
+            rd_response.dirent_array = NULL;
+        }
+
+    } while(rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
+
+    return 0;
+}
+
 int skye_readdir(char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
                  struct fuse_file_info *fi){
-    /*
-    skye_dirlist result;
-    bzero(&result,sizeof(result));
+    int ret;
+    PVFS_sysresp_readdir rd_response;
+    unsigned int pvfs_dirent_incount = 32; // reasonable chank size
+    PVFS_ds_position token = 0;
 
-	enum clnt_stat retval = skye_rpc_readdir_1(path, &result, skye_client);
-	if (retval != RPC_SUCCESS) {
-		clnt_perror (skye_client, "call failed");
-        return -EIO;
-	} else if (result.errnum != 0){
-        return result.errnum;
-    } 
+    PVFS_object_ref ref;
+    resolve(path, &ref);
 
-    skye_dnode *dnode = result.skye_dirlist_u.dlist;
-    while (dnode != NULL){
-        if (filler(buf, dnode->name, &dnode->stbuf, 0) != 0)
-            return -EIO;
-        dnode = dnode->next;
-    }
-    */
+    do {
+        char *cur_file = NULL;
+        unsigned int i;
+
+        memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
+        ret = PVFS_sys_readdir(ref, (!token ? PVFS_READDIR_START : token),
+                               pvfs_dirent_incount, &credentials, &rd_response,
+                               PVFS_HINT_NULL);
+        if (ret < 0)
+            return ret;
+
+        for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
+            ref.handle = rd_response.dirent_array[i].handle; 
+            pvfs_readdir(&ref, buf, filler);
+        }
+        token += rd_response.pvfs_dirent_outcount;
+
+        if (rd_response.pvfs_dirent_outcount) {
+            free(rd_response.dirent_array);
+            rd_response.dirent_array = NULL;
+        }
+
+    } while (rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
+
     return 0;
 }
 
@@ -95,12 +140,10 @@ static int pvfs_stat(PVFS_object_ref *ref, struct stat *stbuf)
 {
     PVFS_sysresp_getattr getattr_response;
     PVFS_sys_attr*	attrs;
-    PVFS_credentials credentials;
 
     int			ret;
     int			perm_mode = 0;
 
-    pvfs_gen_credentials(&credentials);
     memset(&getattr_response,0, sizeof(PVFS_sysresp_getattr));
 
     ret = PVFS_sys_getattr(*ref, PVFS_ATTR_SYS_ALL_NOHINT, &credentials,
