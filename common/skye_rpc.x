@@ -8,6 +8,10 @@
 %#include <pvfs2-types.h>
 #elif RPC_XDR
 %#include "skye_rpc_helper.h"
+%#pragma GCC diagnostic ignored "-Wunused-variable"
+%#pragma GCC diagnostic ignored "-Wunused-parameter"
+#elif RPC_SVC
+%#pragma GCC diagnostic ignored "-Wunused-parameter"
 #endif
 
 /* FIXME: this should be global */
