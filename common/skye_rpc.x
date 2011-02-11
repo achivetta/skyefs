@@ -6,6 +6,7 @@
 
 #ifdef RPC_HDR
 %#include <pvfs2-types.h>
+%#include <sys/types.h>
 #elif RPC_XDR
 %#include "skye_rpc_helper.h"
 %#pragma GCC diagnostic ignored "-Wunused-variable"
@@ -22,6 +23,13 @@ typedef string skye_pathname<MAX_PATHNAME>;
 typedef opaque skye_file_data<MAX_BUF_SIZE>;
 typedef long skye_bitmap;
 
+union skye_result switch (int errnum) {
+	case -EAGAIN:
+		skye_bitmap bitmap;
+	default:
+		void;
+};
+
 union skye_lookup switch (int errnum) {
 	case 0:
 		PVFS_object_ref ref;
@@ -37,5 +45,12 @@ program SKYE_RPC_PROG {                 /* program number */
 	version SKYE_RPC_VERSION {          /* version number */
 		bool SKYE_RPC_INIT(void) = 1;
 		skye_lookup SKYE_RPC_LOOKUP(PVFS_object_ref, skye_pathname) = 2;
+		
+		skye_lookup SKYE_RPC_CREATE(PVFS_object_ref, skye_pathname,
+				mode_t) = 101;
+		skye_lookup SKYE_RPC_MKDIR(PVFS_object_ref, skye_pathname,
+				mode_t) = 102;
+		skye_result SKYE_RPC_RENAME(skye_pathname, PVFS_object_ref,
+				skye_pathname, PVFS_object_ref) = 103;
 	} = 1;
 } = 522222; /* FIXME: Is this a okay value for program number? */

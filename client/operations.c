@@ -7,12 +7,51 @@
 #include <arpa/inet.h>
 #include <errno.h>
 
+/* FIXME: a lot of the paths passed to the skye_* functions should be const.  I
+ * wonder if this could cause FUSE to have problems if we modify them. */
+
 #define pvfs2errno(n) (-1)*(PVFS_get_errno_mapping(n))
+
+/* TODO: should the structure we are storing in the fuse_file_info->fh also have
+ * credentials? */
 
 static PVFS_credentials credentials = {
     .uid = 1000,
     .gid = 1000
 };
+
+static int get_path_components(const char *path, char *fileName, char *dirName)
+{
+	const char *p = path;
+	if (!p || !fileName)
+		return -1;
+
+	if (strcmp(path, "/") == 0) {
+		strcpy(fileName, "/");
+		if (dirName)
+			strcpy(dirName, "/");
+
+		return 0;
+	}
+
+	while ( (*p) != '\0')
+		p++; // Go to end of string
+	while ( (*p) != '/' && p != path)
+		p--; // Come back till '/'
+
+    // Copy after slash till end into filename
+	strncpy(fileName, p+1, MAX_FILENAME_LEN); 
+	if (dirName) {
+		if (path == p)
+			strncpy(dirName, "/", 1);
+		else {
+            // Copy rest into dirpath 
+			strncpy(dirName, path, (int)(p - path )); 
+			dirName[(int)(p - path)] = '\0';
+		}
+	}
+	return 0;
+}
 
 /** Updates parent_ref to point to the specified child */
 static int lookup(PVFS_object_ref* ref, char* pathname)
@@ -100,7 +139,7 @@ static int pvfs_readdir(PVFS_object_ref *ref, void *buf, fuse_fill_dir_t filler)
     return 0;
 }
 
-int skye_readdir(char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
+int skye_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
                  struct fuse_file_info *fi){
     (void)offset;
     (void)fi;
@@ -269,7 +308,7 @@ static int pvfs_getattr(PVFS_object_ref *ref, struct stat *stbuf)
     return 0;
 }
 
-int skye_getattr(char *path, struct stat *stbuf)
+int skye_getattr(const char *path, struct stat *stbuf)
 {
     PVFS_object_ref ref;
     int ret;
@@ -279,6 +318,58 @@ int skye_getattr(char *path, struct stat *stbuf)
 
     if ((ret = pvfs_getattr(&ref, stbuf)) < 0)
         return ret;
+
+    return 0;
+}
+
+int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
+{
+    PVFS_object_ref *ref = malloc(sizeof(PVFS_object_ref));
+
+    char filename[MAX_FILENAME_LEN] = {0};
+    char pathname[MAX_PATHNAME_LEN] = {0};
+
+    get_path_components(path, filename, pathname);
+
+    int ret;
+    if ((ret = resolve(pathname, ref)) < 0)
+        return ret;
+
+    enum clnt_stat retval;
+    skye_lookup result;
+
+    retval = skye_rpc_create_1(*ref, filename, mode, &result, rpc_client);
+    if (retval != RPC_SUCCESS) {
+		clnt_perror (rpc_client, "RPC create failed");
+        return -EIO;
+	}
+
+    fi->fh = (intptr_t) ref;
+
+    return 0;
+}
+
+int skye_mkdir(const char * path, mode_t mode)
+{
+    PVFS_object_ref ref;
+
+    char filename[MAX_FILENAME_LEN] = {0};
+    char pathname[MAX_PATHNAME_LEN] = {0};
+
+    get_path_components(path, filename, pathname);
+
+    int ret;
+    if ((ret = resolve(pathname, &ref)) < 0)
+        return ret;
+
+    enum clnt_stat retval;
+    skye_lookup result;
+
+    retval = skye_rpc_mkdir_1(ref, filename, mode, &result, rpc_client);
+    if (retval != RPC_SUCCESS) {
+		clnt_perror (rpc_client, "RPC create failed");
+        return -EIO;
+	}
 
     return 0;
 }

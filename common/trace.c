@@ -176,8 +176,7 @@ static void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 
 	if (daemon_proc) {
 		syslog(level, buf, strlen(buf));
-	} 
-    else {
+    } else {
 		fflush(stdout);		/* in case stdout and stderr are the same */
 		fputs(buf, stderr);
 		fflush(stderr);

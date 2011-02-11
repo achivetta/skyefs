@@ -2,3 +2,4 @@ Does SunRPC serialize requests across the wire?
 Is libpvfs multithreaded?
 RPC needs to pass credentials
 Proper PVFS error handling, see pvfs2-types.h:537
+should I pass around PVFS_object_ref or PVFS_handle

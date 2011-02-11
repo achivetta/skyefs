@@ -7,5 +7,6 @@
 #include <inttypes.h>
 
 bool_t xdr_PVFS_object_ref(XDR *xdrs, PVFS_object_ref *objp);
+bool_t xdr_mode_t(XDR *xdrs, mode_t *mode);
 
 #endif /* GIGA_RPC_HELPER_H */

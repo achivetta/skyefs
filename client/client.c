@@ -43,6 +43,8 @@ static struct fuse_operations skye_oper = {
     .init      = skye_init,
     .destroy   = skye_destroy,
     .getattr   = skye_getattr,
+    .mkdir     = skye_mkdir,
+    .create    = skye_create,
     .readdir   = skye_readdir
 };
 
