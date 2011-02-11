@@ -48,7 +48,7 @@ program SKYE_RPC_PROG {                 /* program number */
 		
 		skye_lookup SKYE_RPC_CREATE(PVFS_object_ref, skye_pathname,
 				mode_t) = 101;
-		skye_lookup SKYE_RPC_MKDIR(PVFS_object_ref, skye_pathname,
+		skye_result SKYE_RPC_MKDIR(PVFS_object_ref, skye_pathname,
 				mode_t) = 102;
 		skye_result SKYE_RPC_RENAME(skye_pathname, PVFS_object_ref,
 				skye_pathname, PVFS_object_ref) = 103;

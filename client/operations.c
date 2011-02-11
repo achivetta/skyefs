@@ -344,6 +344,9 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
         return -EIO;
 	}
 
+    if (result.errnum != 0)
+        return result.errnum;
+
     fi->fh = (intptr_t) ref;
 
     return 0;
@@ -363,7 +366,7 @@ int skye_mkdir(const char * path, mode_t mode)
         return ret;
 
     enum clnt_stat retval;
-    skye_lookup result;
+    skye_result result;
 
     retval = skye_rpc_mkdir_1(ref, filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
@@ -371,5 +374,34 @@ int skye_mkdir(const char * path, mode_t mode)
         return -EIO;
 	}
 
-    return 0;
+    return result.errnum;
+}
+
+int skye_rename(const char *src_path, const char *dst_path)
+{
+    PVFS_object_ref src_ref;
+    char src_name[MAX_FILENAME_LEN] = {0};
+    char src_dir[MAX_PATHNAME_LEN] = {0};
+    get_path_components(src_path, src_name, src_dir);
+
+    PVFS_object_ref dst_ref;
+    char dst_name[MAX_FILENAME_LEN] = {0};
+    char dst_dir[MAX_PATHNAME_LEN] = {0};
+    get_path_components(dst_path, dst_name, dst_dir);
+
+    int ret;
+    if ((ret = resolve(src_dir, &src_ref)) < 0)
+        return ret;
+    if ((ret = resolve(dst_dir, &dst_ref)) < 0)
+        return ret;
+
+    enum clnt_stat retval;
+    skye_result result;
+    retval = skye_rpc_rename_1(src_name, src_ref, dst_name, dst_ref, &result, rpc_client);
+    if (retval != RPC_SUCCESS) {
+		clnt_perror (rpc_client, "RPC create failed");
+        return -EIO;
+	}
+
+    return result.errnum;
 }

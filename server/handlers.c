@@ -99,14 +99,14 @@ bool_t skye_rpc_create_1_svc(PVFS_object_ref parent, skye_pathname filename,
 }
 
 bool_t skye_rpc_mkdir_1_svc(PVFS_object_ref parent, skye_pathname dirname,
-                            mode_t mode, skye_lookup *result, 
+                            mode_t mode, skye_result *result, 
                             struct svc_req *rqstp)
 {
     (void)rqstp;
 
     PVFS_sysresp_mkdir resp_mkdir;
 
-    PVFS_credentials	creds;
+    PVFS_credentials creds;
     pvfs_gen_credentials(&creds);
 
     /* Set attributes */
@@ -119,20 +119,31 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_object_ref parent, skye_pathname dirname,
 
     int rc = PVFS_sys_mkdir(dirname, parent, attr, &creds, &resp_mkdir,
                             PVFS_HINT_NULL);
-    if (rc != 0){
+    if (rc != 0)
         result->errnum = -1 * PVFS_get_errno_mapping(rc);
-    }
+    else
+        result->errnum = 0;
 
 	return true;
 }
 
-bool_t skye_rpc_rename_1_svc(skye_pathname arg1, PVFS_object_ref arg2,
-                             skye_pathname arg3, PVFS_object_ref arg4,
+bool_t skye_rpc_rename_1_svc(skye_pathname src_name, PVFS_object_ref src_parent,
+                             skye_pathname dst_name, PVFS_object_ref dst_parent,
                              skye_result *result,  struct svc_req *rqstp)
 {
-	bool_t retval;
+    (void)rqstp;
 
-	return retval;
+    PVFS_credentials creds;
+    pvfs_gen_credentials(&creds);
+
+    int rc = PVFS_sys_rename(src_name, src_parent, dst_name, dst_parent,
+                             &creds, PVFS_HINT_NULL);
+    if (rc != 0)
+        result->errnum = -1 * PVFS_get_errno_mapping(rc);
+    else
+        result->errnum = 0;
+
+	return true;
 }
 
 /* TODO: What exactly am I supposed to do here? */
