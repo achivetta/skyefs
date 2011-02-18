@@ -331,7 +331,7 @@ int skye_getattr(const char *path, struct stat *stbuf)
 
 int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
-    PVFS_object_ref *ref = malloc(sizeof(PVFS_object_ref));
+    PVFS_object_ref *ref;
     PVFS_credentials credentials; gen_credentials(&credentials);
 
     char filename[MAX_FILENAME_LEN] = {0};
@@ -339,9 +339,14 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 
     get_path_components(path, filename, pathname);
 
+    if ((ref = malloc(sizeof(PVFS_object_ref))) == NULL)
+        return -ENOMEM;
+
     int ret;
-    if ((ret = resolve(&credentials, pathname, ref)) < 0)
+    if ((ret = resolve(&credentials, pathname, ref)) < 0){
+        free(ref);
         return ret;
+    }
 
     enum clnt_stat retval;
     skye_lookup result;
@@ -349,11 +354,14 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
     retval = skye_rpc_create_1(credentials, *ref, filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC create failed");
+        free(ref);
         return -EIO;
 	}
 
-    if (result.errnum != 0)
+    if (result.errnum != 0){
+        free(ref);
         return result.errnum;
+    }
 
     fi->fh = (intptr_t) ref;
 
@@ -522,4 +530,73 @@ int skye_utime(const char *path, struct utimbuf *timbuf)
         return pvfs2errno(ret);
 
     return 0;
+}
+
+int skye_open(const char *path, struct fuse_file_info *fi)
+{
+    PVFS_object_ref *ref;
+    PVFS_credentials credentials; gen_credentials(&credentials);
+    int ret;
+
+    if ((ref = malloc(sizeof(PVFS_object_ref))) == NULL)
+        return -ENOMEM;
+
+    if ((ret = resolve(&credentials, path, ref)) < 0){
+        free(ref);
+        return ret;
+    }
+
+    fi->fh = (intptr_t) ref;
+
+    return 0;
+}
+
+int skye_read(const char* path, char *buf, size_t size, off_t offset, 
+              struct fuse_file_info *fi)
+{
+    (void)path;
+
+    PVFS_object_ref *ref = (PVFS_object_ref*)fi->fh;
+    PVFS_credentials credentials; gen_credentials(&credentials);
+    PVFS_Request mem_req, file_req;
+    PVFS_sysresp_io resp_io;
+    int ret;
+
+    file_req = PVFS_BYTE;
+    ret = PVFS_Request_contiguous(size, PVFS_BYTE, &mem_req);
+    if (ret < 0)
+        return pvfs2errno(ret);
+
+    ret = PVFS_sys_read(*ref, file_req, offset, buf, mem_req, &credentials,
+                        &resp_io, PVFS_HINT_NULL);
+    if (ret < 0)
+        return pvfs2errno(ret);
+
+    PVFS_Request_free(&mem_req);
+    return resp_io.total_completed;
+}
+
+int skye_write(const char* path, const char *buf, size_t size, off_t offset, 
+              struct fuse_file_info *fi)
+{
+    (void)path;
+
+    PVFS_object_ref *ref = (PVFS_object_ref*)fi->fh;
+    PVFS_credentials credentials; gen_credentials(&credentials);
+    PVFS_Request mem_req, file_req;
+    PVFS_sysresp_io resp_io;
+    int ret;
+
+    file_req = PVFS_BYTE;
+    ret = PVFS_Request_contiguous(size, PVFS_BYTE, &mem_req);
+    if (ret < 0)
+        return pvfs2errno(ret);
+
+    ret = PVFS_sys_write(*ref, file_req, offset, (void*)buf, mem_req,
+                         &credentials, &resp_io, PVFS_HINT_NULL);
+    if (ret < 0)
+        return pvfs2errno(ret);
+
+    PVFS_Request_free(&mem_req);
+    return resp_io.total_completed;
 }

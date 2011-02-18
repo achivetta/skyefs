@@ -53,6 +53,9 @@ static struct fuse_operations skye_oper = {
     .chown     = skye_chown,
     .truncate  = skye_truncate,
     .utime     = skye_utime,
+    .write     = skye_write,
+    .read      = skye_read,
+    .open      = skye_open
 };
 
 int main(int argc, char *argv[])
