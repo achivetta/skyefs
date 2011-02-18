@@ -77,7 +77,7 @@ static int lookup(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pat
     return 0;
 }
 
-static int resolve(PVFS_credentials *credentials, char* pathname, PVFS_object_ref* ref)
+static int resolve(PVFS_credentials *credentials, const char* pathname, PVFS_object_ref* ref)
 {
 
     PVFS_sysresp_lookup lk_response;
@@ -93,11 +93,14 @@ static int resolve(PVFS_credentials *credentials, char* pathname, PVFS_object_re
     *ref = lk_response.ref;
 
     char *saveptr, *component;
-    component = strtok_r(pathname, "/", &saveptr);
+    char *pathname_copy = strdup(pathname); /* since fuse passes us a const */
+    component = strtok_r(pathname_copy, "/", &saveptr);
     while (component){
         ret = lookup(credentials, ref, component);
-        if (ret < 0)
+        if (ret < 0){
+            free(pathname_copy);
             return ret; 
+        }
 
         component = strtok_r(NULL, "/", &saveptr);
     }
