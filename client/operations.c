@@ -15,10 +15,12 @@
 /* TODO: should the structure we are storing in the fuse_file_info->fh also have
  * credentials? */
 
-static PVFS_credentials credentials = {
-    .uid = 1000,
-    .gid = 1000
-};
+/* DANGER: depends on internals of PVFS struct */
+static void gen_credentials(PVFS_credentials *credentials)
+{
+    credentials->uid = fuse_get_context()->uid;
+    credentials->gid = fuse_get_context()->gid;
+}
 
 static int get_path_components(const char *path, char *fileName, char *dirName)
 {
@@ -54,12 +56,12 @@ static int get_path_components(const char *path, char *fileName, char *dirName)
 }
 
 /** Updates parent_ref to point to the specified child */
-static int lookup(PVFS_object_ref* ref, char* pathname)
+static int lookup(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pathname)
 {
 	enum clnt_stat retval;
 	skye_lookup result;
 
-	retval = skye_rpc_lookup_1(*ref, pathname, &result, rpc_client);
+	retval = skye_rpc_lookup_1(*credentails, *ref, pathname, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC lookup failed");
         return -EIO;
@@ -75,7 +77,7 @@ static int lookup(PVFS_object_ref* ref, char* pathname)
     return 0;
 }
 
-static int resolve(char* pathname, PVFS_object_ref* ref)
+static int resolve(PVFS_credentials *credentials, char* pathname, PVFS_object_ref* ref)
 {
 
     PVFS_sysresp_lookup lk_response;
@@ -83,7 +85,7 @@ static int resolve(char* pathname, PVFS_object_ref* ref)
 
     memset(&lk_response, 0, sizeof(lk_response));
 
-    ret = PVFS_sys_lookup(pvfs_fsid, (char *)"/", &credentials, &lk_response,
+    ret = PVFS_sys_lookup(pvfs_fsid, (char *)"/", credentials, &lk_response,
                           PVFS2_LOOKUP_LINK_NO_FOLLOW, PVFS_HINT_NULL);
     if ( ret < 0 )
         return pvfs2errno(ret);
@@ -93,7 +95,7 @@ static int resolve(char* pathname, PVFS_object_ref* ref)
     char *saveptr, *component;
     component = strtok_r(pathname, "/", &saveptr);
     while (component){
-        ret = lookup(ref, component);
+        ret = lookup(credentials, ref, component);
         if (ret < 0)
             return ret; 
 
@@ -103,7 +105,7 @@ static int resolve(char* pathname, PVFS_object_ref* ref)
     return 0;
 }
 
-static int pvfs_readdir(PVFS_object_ref *ref, void *buf, fuse_fill_dir_t filler)
+static int pvfs_readdir(PVFS_credentials *credentials, PVFS_object_ref *ref, void *buf, fuse_fill_dir_t filler)
 {
     int ret;
     PVFS_sysresp_readdir rd_response;
@@ -116,7 +118,7 @@ static int pvfs_readdir(PVFS_object_ref *ref, void *buf, fuse_fill_dir_t filler)
 
         memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
         ret = PVFS_sys_readdir(*ref, (!token ? PVFS_READDIR_START : token),
-                                pvfs_dirent_incount, &credentials, &rd_response,
+                                pvfs_dirent_incount, credentials, &rd_response,
                                 PVFS_HINT_NULL);
         if (ret < 0)
             return pvfs2errno(ret);
@@ -145,12 +147,13 @@ int skye_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t of
     (void)fi;
 
     PVFS_object_ref ref;
+    PVFS_credentials credentials; gen_credentials(&credentials);
     int ret;
 
-    if ( (ret = resolve(path, &ref)) < 0 )
+    if ( (ret = resolve(&credentials, path, &ref)) < 0 )
         return ret;
 
-    return pvfs_readdir(&ref, buf, filler);
+    return pvfs_readdir(&credentials, &ref, buf, filler);
 
     /* Giga+ version lies below 
     unsigned int pvfs_dirent_incount = 32; // reasonable chank size
@@ -183,7 +186,7 @@ int skye_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t of
 }
 
 /* function body taken from pvfs2fuse.c */
-static int pvfs_getattr(PVFS_object_ref *ref, struct stat *stbuf)
+static int pvfs_getattr(PVFS_credentials *credentials, PVFS_object_ref *ref, struct stat *stbuf)
 {
     PVFS_sysresp_getattr getattr_response;
     PVFS_sys_attr*	attrs;
@@ -193,7 +196,7 @@ static int pvfs_getattr(PVFS_object_ref *ref, struct stat *stbuf)
 
     memset(&getattr_response,0, sizeof(PVFS_sysresp_getattr));
 
-    ret = PVFS_sys_getattr(*ref, PVFS_ATTR_SYS_ALL_NOHINT, &credentials,
+    ret = PVFS_sys_getattr(*ref, PVFS_ATTR_SYS_ALL_NOHINT, credentials,
                            &getattr_response, PVFS_HINT_NULL);
     if ( ret < 0 )
         return pvfs2errno(ret);
@@ -311,12 +314,13 @@ static int pvfs_getattr(PVFS_object_ref *ref, struct stat *stbuf)
 int skye_getattr(const char *path, struct stat *stbuf)
 {
     PVFS_object_ref ref;
+    PVFS_credentials credentials; gen_credentials(&credentials);
     int ret;
 
-    if ((ret = resolve(path, &ref)) < 0)
+    if ((ret = resolve(&credentials, path, &ref)) < 0)
         return ret;
 
-    if ((ret = pvfs_getattr(&ref, stbuf)) < 0)
+    if ((ret = pvfs_getattr(&credentials, &ref, stbuf)) < 0)
         return ret;
 
     return 0;
@@ -325,6 +329,7 @@ int skye_getattr(const char *path, struct stat *stbuf)
 int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
     PVFS_object_ref *ref = malloc(sizeof(PVFS_object_ref));
+    PVFS_credentials credentials; gen_credentials(&credentials);
 
     char filename[MAX_FILENAME_LEN] = {0};
     char pathname[MAX_PATHNAME_LEN] = {0};
@@ -332,13 +337,13 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
     get_path_components(path, filename, pathname);
 
     int ret;
-    if ((ret = resolve(pathname, ref)) < 0)
+    if ((ret = resolve(&credentials, pathname, ref)) < 0)
         return ret;
 
     enum clnt_stat retval;
     skye_lookup result;
 
-    retval = skye_rpc_create_1(*ref, filename, mode, &result, rpc_client);
+    retval = skye_rpc_create_1(credentials, *ref, filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC create failed");
         return -EIO;
@@ -355,6 +360,7 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 int skye_mkdir(const char * path, mode_t mode)
 {
     PVFS_object_ref ref;
+    PVFS_credentials credentials; gen_credentials(&credentials);
 
     char filename[MAX_FILENAME_LEN] = {0};
     char pathname[MAX_PATHNAME_LEN] = {0};
@@ -362,13 +368,13 @@ int skye_mkdir(const char * path, mode_t mode)
     get_path_components(path, filename, pathname);
 
     int ret;
-    if ((ret = resolve(pathname, &ref)) < 0)
+    if ((ret = resolve(&credentials, pathname, &ref)) < 0)
         return ret;
 
     enum clnt_stat retval;
     skye_result result;
 
-    retval = skye_rpc_mkdir_1(ref, filename, mode, &result, rpc_client);
+    retval = skye_rpc_mkdir_1(credentials, ref, filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC create failed");
         return -EIO;
@@ -379,6 +385,8 @@ int skye_mkdir(const char * path, mode_t mode)
 
 int skye_rename(const char *src_path, const char *dst_path)
 {
+    PVFS_credentials credentials; gen_credentials(&credentials);
+
     PVFS_object_ref src_ref;
     char src_name[MAX_FILENAME_LEN] = {0};
     char src_dir[MAX_PATHNAME_LEN] = {0};
@@ -390,14 +398,14 @@ int skye_rename(const char *src_path, const char *dst_path)
     get_path_components(dst_path, dst_name, dst_dir);
 
     int ret;
-    if ((ret = resolve(src_dir, &src_ref)) < 0)
+    if ((ret = resolve(&credentials, src_dir, &src_ref)) < 0)
         return ret;
-    if ((ret = resolve(dst_dir, &dst_ref)) < 0)
+    if ((ret = resolve(&credentials, dst_dir, &dst_ref)) < 0)
         return ret;
 
     enum clnt_stat retval;
     skye_result result;
-    retval = skye_rpc_rename_1(src_name, src_ref, dst_name, dst_ref, &result, rpc_client);
+    retval = skye_rpc_rename_1(credentials, src_name, src_ref, dst_name, dst_ref, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC create failed");
         return -EIO;
@@ -408,12 +416,13 @@ int skye_rename(const char *src_path, const char *dst_path)
 
 int skye_remove(const char *path){
     PVFS_object_ref ref;
+    PVFS_credentials credentials; gen_credentials(&credentials);
     char parent[MAX_PATHNAME_LEN], filename[MAX_FILENAME_LEN];
     int ret;
 
     get_path_components(path, filename, parent);
 
-    if ((ret = resolve(parent, &ref)) < 0)
+    if ((ret = resolve(&credentials, parent, &ref)) < 0)
         return ret;
 
     ret = PVFS_sys_remove(filename, ref, &credentials, PVFS_HINT_NULL);
@@ -434,9 +443,10 @@ int skye_rmdir(const char *path){
 int skye_chmod(const char *path, mode_t mode){
     PVFS_object_ref ref;
     PVFS_sys_attr new_attr;
+    PVFS_credentials credentials; gen_credentials(&credentials);
     int ret;
 
-    if ((ret = resolve(path, &ref)) < 0)
+    if ((ret = resolve(&credentials, path, &ref)) < 0)
         return ret;
 
     new_attr.perms = mode;
@@ -452,9 +462,10 @@ int skye_chmod(const char *path, mode_t mode){
 int skye_chown(const char *path, uid_t uid, gid_t gid){
     PVFS_object_ref ref;
     PVFS_sys_attr new_attr;
+    PVFS_credentials credentials; gen_credentials(&credentials);
     int ret;
 
-    if ((ret = resolve(path, &ref)) < 0)
+    if ((ret = resolve(&credentials, path, &ref)) < 0)
         return ret;
 
     new_attr.owner = uid;
@@ -470,9 +481,10 @@ int skye_chown(const char *path, uid_t uid, gid_t gid){
 
 int skye_truncate(const char *path, off_t size){
     PVFS_object_ref ref;
+    PVFS_credentials credentials; gen_credentials(&credentials);
     int ret;
 
-    if ((ret = resolve(path, &ref)) < 0)
+    if ((ret = resolve(&credentials, path, &ref)) < 0)
         return ret;
 
     ret = PVFS_sys_truncate(ref, size, &credentials, PVFS_HINT_NULL);
@@ -485,9 +497,10 @@ int skye_truncate(const char *path, off_t size){
 int skye_utime(const char *path, struct utimbuf *timbuf){
     PVFS_object_ref ref;
     PVFS_sys_attr new_attr;
+    PVFS_credentials credentials; gen_credentials(&credentials);
     int ret;
 
-    if ((ret = resolve(path, &ref)) < 0)
+    if ((ret = resolve(&credentials, path, &ref)) < 0)
         return ret;
 
     new_attr.atime = (PVFS_time)timbuf->actime;

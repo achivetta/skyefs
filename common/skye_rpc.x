@@ -44,13 +44,13 @@ union skye_lookup switch (int errnum) {
 program SKYE_RPC_PROG {                 /* program number */
 	version SKYE_RPC_VERSION {          /* version number */
 		bool SKYE_RPC_INIT(void) = 1;
-		skye_lookup SKYE_RPC_LOOKUP(PVFS_object_ref, skye_pathname) = 2;
+		skye_lookup SKYE_RPC_LOOKUP(PVFS_credentials, PVFS_object_ref, skye_pathname) = 2;
 		
-		skye_lookup SKYE_RPC_CREATE(PVFS_object_ref, skye_pathname,
+		skye_lookup SKYE_RPC_CREATE(PVFS_credentials, PVFS_object_ref, skye_pathname,
 				mode_t) = 101;
-		skye_result SKYE_RPC_MKDIR(PVFS_object_ref, skye_pathname,
+		skye_result SKYE_RPC_MKDIR(PVFS_credentials, PVFS_object_ref, skye_pathname,
 				mode_t) = 102;
-		skye_result SKYE_RPC_RENAME(skye_pathname, PVFS_object_ref,
+		skye_result SKYE_RPC_RENAME(PVFS_credentials, skye_pathname, PVFS_object_ref,
 				skye_pathname, PVFS_object_ref) = 103;
 	} = 1;
 } = 522222; /* FIXME: Is this a okay value for program number? */
