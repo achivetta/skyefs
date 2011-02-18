@@ -405,3 +405,98 @@ int skye_rename(const char *src_path, const char *dst_path)
 
     return result.errnum;
 }
+
+int skye_remove(const char *path){
+    PVFS_object_ref ref;
+    char parent[MAX_PATHNAME_LEN], filename[MAX_FILENAME_LEN];
+    int ret;
+
+    get_path_components(path, filename, parent);
+
+    if ((ret = resolve(parent, &ref)) < 0)
+        return ret;
+
+    ret = PVFS_sys_remove(filename, ref, &credentials, PVFS_HINT_NULL);
+    if (ret < 0)
+        return pvfs2errno(ret);
+
+    return 0;
+}
+
+int skye_unlink(const char *path){
+    return skye_remove(path);
+}
+
+int skye_rmdir(const char *path){
+    return skye_remove(path);
+}
+
+int skye_chmod(const char *path, mode_t mode){
+    PVFS_object_ref ref;
+    PVFS_sys_attr new_attr;
+    int ret;
+
+    if ((ret = resolve(path, &ref)) < 0)
+        return ret;
+
+    new_attr.perms = mode;
+    new_attr.mask = PVFS_ATTR_SYS_PERM;
+
+    ret = PVFS_sys_setattr(ref, new_attr, &credentials, PVFS_HINT_NULL);
+    if (ret < 0)
+        return pvfs2errno(ret);
+
+    return 0;
+}
+
+int skye_chown(const char *path, uid_t uid, gid_t gid){
+    PVFS_object_ref ref;
+    PVFS_sys_attr new_attr;
+    int ret;
+
+    if ((ret = resolve(path, &ref)) < 0)
+        return ret;
+
+    new_attr.owner = uid;
+    new_attr.group = gid;
+    new_attr.mask = PVFS_ATTR_SYS_UID | PVFS_ATTR_SYS_GID;
+
+    ret = PVFS_sys_setattr(ref, new_attr, &credentials, PVFS_HINT_NULL);
+    if (ret < 0)
+        return pvfs2errno(ret);
+
+    return 0;
+}
+
+int skye_truncate(const char *path, off_t size){
+    PVFS_object_ref ref;
+    int ret;
+
+    if ((ret = resolve(path, &ref)) < 0)
+        return ret;
+
+    ret = PVFS_sys_truncate(ref, size, &credentials, PVFS_HINT_NULL);
+    if (ret < 0)
+        return pvfs2errno(ret);
+
+    return 0;
+}
+
+int skye_utime(const char *path, struct utimbuf *timbuf){
+    PVFS_object_ref ref;
+    PVFS_sys_attr new_attr;
+    int ret;
+
+    if ((ret = resolve(path, &ref)) < 0)
+        return ret;
+
+    new_attr.atime = (PVFS_time)timbuf->actime;
+    new_attr.mtime = (PVFS_time)timbuf->modtime;
+    new_attr.mask = PVFS_ATTR_SYS_ATIME | PVFS_ATTR_SYS_MTIME;
+
+    ret = PVFS_sys_setattr(ref, new_attr, &credentials, PVFS_HINT_NULL);
+    if (ret < 0)
+        return pvfs2errno(ret);
+
+    return 0;
+}

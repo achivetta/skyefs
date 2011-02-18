@@ -46,7 +46,13 @@ static struct fuse_operations skye_oper = {
     .mkdir     = skye_mkdir,
     .create    = skye_create,
     .readdir   = skye_readdir,
-    .rename    = skye_rename
+    .rename    = skye_rename,
+    .unlink    = skye_unlink,
+    .rmdir     = skye_rmdir,
+    .chmod     = skye_chmod,
+    .chown     = skye_chown,
+    .truncate  = skye_truncate,
+    .utime     = skye_utime,
 };
 
 int main(int argc, char *argv[])
