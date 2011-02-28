@@ -6,7 +6,7 @@ desc="rmdir returns ENOTDIR if a component of the path is not a directory"
 dir=`dirname $0`
 . ${dir}/../misc.sh
 
-echo "1..14"
+echo "1..11"
 
 n0=`namegen`
 n1=`namegen`
@@ -22,9 +22,5 @@ expect ENOTDIR rmdir ${n0}
 expect 0 unlink ${n0}
 
 expect 0 symlink ${n1} ${n0}
-expect ENOTDIR rmdir ${n0}
-expect 0 unlink ${n0}
-
-expect 0 mkfifo ${n0} 0644
 expect ENOTDIR rmdir ${n0}
 expect 0 unlink ${n0}
