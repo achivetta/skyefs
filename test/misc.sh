@@ -11,12 +11,12 @@ path1024="${path1023}x"
 
 echo ${dir} | egrep '^/' >/dev/null 2>&1
 if [ $? -eq 0 ]; then
-	maindir="${dir}/../.."
+	maindir="${dir}/.."
 else
-	maindir="`pwd`/${dir}/../.."
+	maindir="`pwd`/${dir}/.."
 fi
 fstest="${maindir}/fstest"
-. ${maindir}/tests/conf
+. ${maindir}/conf
 
 run_getconf()
 {
