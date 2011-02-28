@@ -1,0 +1,3 @@
+# Known operating systems: FreeBSD, SunOS, Linux
+os=`uname`
+fs="skyefs"
