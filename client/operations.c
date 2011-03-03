@@ -47,13 +47,14 @@ static int get_path_components(const char *path, char *fileName, char *dirName)
 	strncpy(fileName, p+1, MAX_FILENAME_LEN); 
 	if (dirName) {
 		if (path == p)
-			strncpy(dirName, "/", 1);
+			strncpy(dirName, "/", 2);
 		else {
             // Copy rest into dirpath 
 			strncpy(dirName, path, (int)(p - path )); 
 			dirName[(int)(p - path)] = '\0';
 		}
 	}
+
 	return 0;
 }
 
