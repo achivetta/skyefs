@@ -24,7 +24,7 @@ clean :
 	@for d in $(DIRS); do (cd $$d; $(MAKE) clean ); done
 
 tags : force_look
-	ctags -R ./ /usr/include/rpc/ /usr/include/fuse/ /usr/include/pvfs2*
+	ctags -R ./ /usr/include/rpc/ /usr/include/fuse/ /usr/local/include/pvfs2*
 
 git-ignored :
 	git ls-files --others -i --exclude-standard

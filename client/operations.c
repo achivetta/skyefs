@@ -1,21 +1,23 @@
 #include "common/skye_rpc.h"
 #include "common/defaults.h"
 #include "client.h"
+#include "common/trace.h"
 
 #include <rpc/rpc.h>
 #include <fuse.h>
 #include <arpa/inet.h>
 #include <errno.h>
 
-/* FIXME: a lot of the paths passed to the skye_* functions should be const.  I
- * wonder if this could cause FUSE to have problems if we modify them. */
+/* FIXME: see pvfs:src/apps/admin/pvfs2-cp.c for how to do permissions correctly
+ */
 
 #define pvfs2errno(n) (-1)*(PVFS_get_errno_mapping(n))
 
 /* TODO: should the structure we are storing in the fuse_file_info->fh also have
  * credentials? */
 
-/* DANGER: depends on internals of PVFS struct */
+/* DANGER: depends on internals of PVFS struct
+ * FIXME should this use PVFS_util_gen_credentials()? */
 static void gen_credentials(PVFS_credentials *credentials)
 {
     credentials->uid = fuse_get_context()->uid;
@@ -363,6 +365,8 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
         return result.errnum;
     }
 
+    memcpy(ref, &result.skye_lookup_u.ref, sizeof(PVFS_object_ref));
+
     fi->fh = (intptr_t) ref;
 
     return 0;
@@ -464,6 +468,7 @@ int skye_chmod(const char *path, mode_t mode)
     if ((ret = resolve(&credentials, path, &ref)) < 0)
         return ret;
 
+    // FIXME: should be PVFS_util_translate_mode()?
     new_attr.perms = mode & PVFS_PERM_VALID;
     new_attr.mask = PVFS_ATTR_SYS_PERM;
 

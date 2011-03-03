@@ -15,6 +15,8 @@
 #include <pvfs2-util.h>
 #include <rpc/rpc.h>
 #include <arpa/inet.h>
+#include <unistd.h>
+#include <sys/types.h>
 
 struct client_options client_options;
 struct PVFS_sys_mntent pvfs_mntent;
@@ -72,6 +74,10 @@ int main(int argc, char *argv[])
 
     if (!client_options.host) client_options.host = DEFAULT_IP;
     if (!client_options.port) client_options.port = DEFAULT_PORT;
+
+    fuse_opt_insert_arg(&args, 1, "-odirect_io");
+    fuse_opt_insert_arg(&args, 1, "-oattr_timeout=0");
+    fuse_opt_insert_arg(&args, 1, "-omax_write=524288");
 
     ret = fuse_main(args.argc, args.argv, &skye_oper, NULL);
 
