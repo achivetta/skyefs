@@ -15,6 +15,8 @@
 #include <pvfs2-util.h>
 #include <rpc/rpc.h>
 #include <arpa/inet.h>
+#include <unistd.h>
+#include <sys/types.h>
 
 struct client_options client_options;
 struct PVFS_sys_mntent pvfs_mntent;
@@ -46,7 +48,16 @@ static struct fuse_operations skye_oper = {
     .mkdir     = skye_mkdir,
     .create    = skye_create,
     .readdir   = skye_readdir,
-    .rename    = skye_rename
+    .rename    = skye_rename,
+    .unlink    = skye_unlink,
+    .rmdir     = skye_rmdir,
+    .chmod     = skye_chmod,
+    .chown     = skye_chown,
+    .truncate  = skye_truncate,
+    .utime     = skye_utime,
+    .write     = skye_write,
+    .read      = skye_read,
+    .open      = skye_open
 };
 
 int main(int argc, char *argv[])
@@ -63,6 +74,13 @@ int main(int argc, char *argv[])
 
     if (!client_options.host) client_options.host = DEFAULT_IP;
     if (!client_options.port) client_options.port = DEFAULT_PORT;
+
+    fuse_opt_insert_arg(&args, 1, "-odirect_io");
+    fuse_opt_insert_arg(&args, 1, "-oattr_timeout=0");
+    fuse_opt_insert_arg(&args, 1, "-omax_write=524288");
+    if ( getpid() == 0 )
+        fuse_opt_insert_arg( &args, 1, "-oallow_other" );
+
 
     ret = fuse_main(args.argc, args.argv, &skye_oper, NULL);
 

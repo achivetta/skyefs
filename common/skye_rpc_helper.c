@@ -19,6 +19,17 @@ bool_t xdr_PVFS_object_ref(XDR *xdrs, PVFS_object_ref *objp)
     return TRUE;
 }
 
+/* DANGER, WILL ROBINSON!: this depends on the internal details of
+ * PVFS_object_ref and could break in newer/older PVFS versions
+ */
+bool_t xdr_PVFS_credentials(XDR *xdrs, PVFS_credentials *objp){
+    if (!xdr_uint32_t(xdrs, (uint32_t *)&objp->uid))
+        return FALSE;
+    if (!xdr_uint32_t(xdrs, (uint32_t *)&objp->gid))
+        return FALSE;
+    return TRUE;
+}
+
 /* DANGER, WILL ROBINSON!: this depends on mode_t being a 32 bit int. It will
  * break otherwise
  */
@@ -28,3 +39,4 @@ bool_t xdr_mode_t(XDR *xdrs, mode_t *mode)
         return FALSE;
     return TRUE;
 }
+

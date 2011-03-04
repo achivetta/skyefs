@@ -13,15 +13,6 @@
 #include <pvfs2-util.h>
 #include <pvfs2-sysint.h>
 
-/* FIXME */
-static void pvfs_gen_credentials(PVFS_credentials *credentials)
-{
-   //credentials->uid = fuse_get_context()->uid;
-   //credentials->gid = fuse_get_context()->gid;
-   credentials->uid = 1000;
-   credentials->gid = 1000;
-}
-
 bool_t skye_rpc_init_1_svc(bool_t *result, struct svc_req *rqstp)
 {
     (void)rqstp;
@@ -34,16 +25,14 @@ bool_t skye_rpc_init_1_svc(bool_t *result, struct svc_req *rqstp)
     return true;
 }
 
-bool_t skye_rpc_lookup_1_svc(PVFS_object_ref parent, skye_pathname path,
-                             skye_lookup *result, struct svc_req *rqstp)
+bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
+                             skye_pathname path, skye_lookup *result, 
+                             struct svc_req *rqstp)
 {
     (void)rqstp;
 
     PVFS_sysresp_lookup lk_response;
-    PVFS_credentials	creds;
     int ret;
-
-    pvfs_gen_credentials(&creds);
 
     memset(&lk_response, 0, sizeof(lk_response));
     ret = PVFS_sys_ref_lookup(srv_settings.fs_id, (char *)path, parent,
@@ -60,16 +49,13 @@ bool_t skye_rpc_lookup_1_svc(PVFS_object_ref parent, skye_pathname path,
     return true;;
 }
 
-bool_t skye_rpc_create_1_svc(PVFS_object_ref parent, skye_pathname filename, 
-                             mode_t mode, skye_lookup *result, 
-                             struct svc_req *rqstp)
+bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
+                             skye_pathname filename, mode_t mode, 
+                             skye_lookup *result, struct svc_req *rqstp)
 {
     (void)rqstp;
 
     PVFS_sysresp_create resp_create;
-
-    PVFS_credentials	creds;
-    pvfs_gen_credentials(&creds);
 
     /* Set attributes */
     PVFS_sys_attr attr;
@@ -98,16 +84,13 @@ bool_t skye_rpc_create_1_svc(PVFS_object_ref parent, skye_pathname filename,
     return true;
 }
 
-bool_t skye_rpc_mkdir_1_svc(PVFS_object_ref parent, skye_pathname dirname,
-                            mode_t mode, skye_result *result, 
-                            struct svc_req *rqstp)
+bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
+                            skye_pathname dirname, mode_t mode, 
+                            skye_result *result, struct svc_req *rqstp)
 {
     (void)rqstp;
 
     PVFS_sysresp_mkdir resp_mkdir;
-
-    PVFS_credentials creds;
-    pvfs_gen_credentials(&creds);
 
     /* Set attributes */
     PVFS_sys_attr attr;
@@ -127,14 +110,12 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_object_ref parent, skye_pathname dirname,
 	return true;
 }
 
-bool_t skye_rpc_rename_1_svc(skye_pathname src_name, PVFS_object_ref src_parent,
+bool_t skye_rpc_rename_1_svc(PVFS_credentials creds, 
+                             skye_pathname src_name, PVFS_object_ref src_parent,
                              skye_pathname dst_name, PVFS_object_ref dst_parent,
                              skye_result *result,  struct svc_req *rqstp)
 {
     (void)rqstp;
-
-    PVFS_credentials creds;
-    pvfs_gen_credentials(&creds);
 
     int rc = PVFS_sys_rename(src_name, src_parent, dst_name, dst_parent,
                              &creds, PVFS_HINT_NULL);
