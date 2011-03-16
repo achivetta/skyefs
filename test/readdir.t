@@ -5,7 +5,7 @@ desc="lists files in a directory"
 dir=`dirname $0`
 . ${dir}/misc.sh
 
-echo "1..4"
+echo "1..5"
 
 n0=`namegen`
 n1=`namegen`
@@ -16,27 +16,25 @@ expect 0 mkdir ${n1} 0755
 cdir=`pwd`
 cd ${n1}
 
-echo $n1  > $n1 && echo 'ok 2' || echo 'not ok 2'
-echo $n2 >> $n1
-echo 0 >> $n1
+echo 0 > $n1 && echo 'ok 2' || echo 'not ok 2'
 
 for filename in `seq 1 100`; do
 	touch $filename;
 	echo $filename >> $n1;
 done
 
-sort -n $n1 > $n3
+sort -g $n1 > $n3
 mv $n3 $n2
 
-${fstest} readdir . > $n2
-sort -n $n2 > $n3
+${fstest} readdir . | grep -v fstest > $n2
+sort -g $n2 > $n3
 mv $n3 $n2
 
-diff -q $n1 $n2 >/dev/null && echo 'ok 3' || echo 'not ok 3'
+diff $n1 $n2 >&2 && echo 'ok 3' || echo 'not ok 3'
 
-#rm $n1 $n2
+rm * && echo 'ok 4' || echo 'not ok 4'
 
-ntest=`expr $ntest + 2`
+ntest=`expr $ntest + 3`
 
 cd ${cdir}
 expect 0 rmdir ${n1}
