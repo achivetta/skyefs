@@ -145,7 +145,11 @@ static int pvfs_readdir(PVFS_credentials *credentials, PVFS_object_ref *ref, voi
             if (filler(buf, cur_file, NULL, 0))
                 break;
         }
-        token += rd_response.pvfs_dirent_outcount;
+        
+        if (!token)
+            token = rd_response.pvfs_dirent_outcount - 1;
+        else
+            token += rd_response.pvfs_dirent_outcount;
 
         if (rd_response.pvfs_dirent_outcount) {
             free(rd_response.dirent_array);
