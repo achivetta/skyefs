@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
     fuse_opt_insert_arg(&args, 1, "-omax_write=524288");
     if ( getpid() == 0 )
         fuse_opt_insert_arg( &args, 1, "-oallow_other" );
-
+    fuse_opt_insert_arg(&args, 1, "-s");
 
     ret = fuse_main(args.argc, args.argv, &skye_oper, NULL);
 

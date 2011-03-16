@@ -8,7 +8,7 @@ dir=`dirname $0`
 
 require chflags
 
-echo "1..30"
+echo "1..23"
 
 n0=`namegen`
 n1=`namegen`
@@ -42,13 +42,13 @@ expect EPERM -u 65533 -g 65533 chflags ${n1} UF_IMMUTABLE
 expect none stat ${n1} flags
 expect 0 unlink ${n1}
 
-expect 0 symlink ${n2} ${n1}
-expect EPERM -u 65534 -g 65534 lchflags ${n1} UF_IMMUTABLE
-expect none lstat ${n1} flags
-expect 0 lchown ${n1} 65534 65534
-expect EPERM -u 65533 -g 65533 lchflags ${n1} UF_IMMUTABLE
-expect none lstat ${n1} flags
-expect 0 unlink ${n1}
+#expect 0 symlink ${n2} ${n1}
+#expect EPERM -u 65534 -g 65534 lchflags ${n1} UF_IMMUTABLE
+#expect none lstat ${n1} flags
+#expect 0 lchown ${n1} 65534 65534
+#expect EPERM -u 65533 -g 65533 lchflags ${n1} UF_IMMUTABLE
+#expect none lstat ${n1} flags
+#expect 0 unlink ${n1}
 
 cd ${cdir}
 expect 0 rmdir ${n0}

@@ -6,7 +6,7 @@ desc="rename returns EISDIR when the 'to' argument is a directory, but 'from' is
 dir=`dirname $0`
 . ${dir}/../misc.sh
 
-echo "1..12"
+echo "1..7"
 
 n0=`namegen`
 n1=`namegen`
@@ -19,10 +19,10 @@ expect dir lstat ${n0} type
 expect regular lstat ${n1} type
 expect 0 unlink ${n1}
 
-expect 0 symlink test ${n1}
-expect EISDIR rename ${n1} ${n0}
-expect dir lstat ${n0} type
-expect symlink lstat ${n1} type
-expect 0 unlink ${n1}
+#expect 0 symlink test ${n1}
+#expect EISDIR rename ${n1} ${n0}
+#expect dir lstat ${n0} type
+#expect symlink lstat ${n1} type
+#expect 0 unlink ${n1}
 
 expect 0 rmdir ${n0}

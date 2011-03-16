@@ -6,7 +6,7 @@ desc="rename changes file name"
 dir=`dirname $0`
 . ${dir}/../misc.sh
 
-echo "1..52"
+echo "1..33"
 
 n0=`namegen`
 n1=`namegen`
@@ -36,19 +36,19 @@ expect ENOENT lstat ${n0} type,mode
 expect dir,${inode},0755 lstat ${n1} type,inode,mode
 expect 0 rmdir ${n1}
 
-expect 0 create ${n0} 0644
-rinode=`${fstest} lstat ${n0} inode`
-expect regular,0644 lstat ${n0} type,mode
-expect 0 symlink ${n0} ${n1}
-sinode=`${fstest} lstat ${n1} inode`
-expect regular,${rinode},0644 stat ${n1} type,inode,mode
-expect symlink,${sinode} lstat ${n1} type,inode
-expect 0 rename ${n1} ${n2}
-expect regular,${rinode},0644 stat ${n0} type,inode,mode
-expect ENOENT lstat ${n1} type,mode
-expect symlink,${sinode} lstat ${n2} type,inode
-expect 0 unlink ${n0}
-expect 0 unlink ${n2}
+#expect 0 create ${n0} 0644
+#rinode=`${fstest} lstat ${n0} inode`
+#expect regular,0644 lstat ${n0} type,mode
+#expect 0 symlink ${n0} ${n1}
+#sinode=`${fstest} lstat ${n1} inode`
+#expect regular,${rinode},0644 stat ${n1} type,inode,mode
+#expect symlink,${sinode} lstat ${n1} type,inode
+#expect 0 rename ${n1} ${n2}
+#expect regular,${rinode},0644 stat ${n0} type,inode,mode
+#expect ENOENT lstat ${n1} type,mode
+#expect symlink,${sinode} lstat ${n2} type,inode
+#expect 0 unlink ${n0}
+#expect 0 unlink ${n2}
 
 # successful rename(2) DOES NOT update ctime (in PVFS)
 expect 0 create ${n0} 0644
@@ -67,13 +67,13 @@ ctime2=`${fstest} stat ${n1} ctime`
 test_check $ctime1 -eq $ctime2
 expect 0 rmdir ${n1}
 
-expect 0 symlink ${n2} ${n0}
-ctime1=`${fstest} lstat ${n0} ctime`
-sleep 1
-expect 0 rename ${n0} ${n1}
-ctime2=`${fstest} lstat ${n1} ctime`
-test_check $ctime1 -eq $ctime2
-expect 0 unlink ${n1}
+#expect 0 symlink ${n2} ${n0}
+#ctime1=`${fstest} lstat ${n0} ctime`
+#sleep 1
+#expect 0 rename ${n0} ${n1}
+#ctime2=`${fstest} lstat ${n1} ctime`
+#test_check $ctime1 -eq $ctime2
+#expect 0 unlink ${n1}
 
 # unsuccessful link(2) does not update ctime.
 expect 0 create ${n0} 0644
@@ -92,13 +92,13 @@ ctime2=`${fstest} stat ${n0} ctime`
 test_check $ctime1 -eq $ctime2
 expect 0 rmdir ${n0}
 
-expect 0 symlink ${n2} ${n0}
-ctime1=`${fstest} lstat ${n0} ctime`
-sleep 1
-expect EACCES -u 65534 rename ${n0} ${n1}
-ctime2=`${fstest} lstat ${n0} ctime`
-test_check $ctime1 -eq $ctime2
-expect 0 unlink ${n0}
+#expect 0 symlink ${n2} ${n0}
+#ctime1=`${fstest} lstat ${n0} ctime`
+#sleep 1
+#expect EACCES -u 65534 rename ${n0} ${n1}
+#ctime2=`${fstest} lstat ${n0} ctime`
+#test_check $ctime1 -eq $ctime2
+#expect 0 unlink ${n0}
 
 cd ${cdir}
 expect 0 rmdir ${n3}

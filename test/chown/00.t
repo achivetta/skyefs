@@ -6,7 +6,7 @@ desc="chown changes ownership"
 dir=`dirname $0`
 . ${dir}/../misc.sh
 
-echo "1..90"
+echo "1..60"
 
 n0=`namegen`
 n1=`namegen`
@@ -32,17 +32,17 @@ expect 0 chown ${n0} 0 0
 expect 0,0 lstat ${n0} uid,gid
 expect 0 rmdir ${n0}
 # 20
-expect 0 create ${n0} 0644
-expect 0 symlink ${n0} ${n1}
-expect 0 chown ${n1} 123 456
-expect 123,456 stat ${n1} uid,gid
-expect 123,456 stat ${n0} uid,gid
-expect 0 lchown ${n1} 135 579
-expect 135,579 lstat ${n1} uid,gid
-expect 123,456 stat ${n1} uid,gid
-expect 123,456 stat ${n0} uid,gid
-expect 0 unlink ${n0}
-expect 0 unlink ${n1}
+#expect 0 create ${n0} 0644
+#expect 0 symlink ${n0} ${n1}
+#expect 0 chown ${n1} 123 456
+#expect 123,456 stat ${n1} uid,gid
+#expect 123,456 stat ${n0} uid,gid
+#expect 0 lchown ${n1} 135 579
+#expect 135,579 lstat ${n1} uid,gid
+#expect 123,456 stat ${n1} uid,gid
+#expect 123,456 stat ${n0} uid,gid
+#expect 0 unlink ${n0}
+#expect 0 unlink ${n1}
 
 # non-super-user can modify file group if he is owner of a file and
 # gid he is setting is in his groups list.
@@ -77,14 +77,14 @@ test_check $ctime1 -lt $ctime2
 expect 0 rmdir ${n0}
 
 # 124
-expect 0 symlink ${n1} ${n0}
-ctime1=`${fstest} lstat ${n0} ctime`
-sleep 1
-expect 0 lchown ${n0} 65534 65533
-expect 65534,65533 lstat ${n0} uid,gid
-ctime2=`${fstest} lstat ${n0} ctime`
-test_check $ctime1 -lt $ctime2
-expect 0 unlink ${n0}
+#expect 0 symlink ${n1} ${n0}
+#ctime1=`${fstest} lstat ${n0} ctime`
+#sleep 1
+#expect 0 lchown ${n0} 65534 65533
+#expect 65534,65533 lstat ${n0} uid,gid
+#ctime2=`${fstest} lstat ${n0} ctime`
+#test_check $ctime1 -lt $ctime2
+#expect 0 unlink ${n0}
 # 129
 expect 0 create ${n0} 0644
 expect 0 chown ${n0} 65534 65533
@@ -107,15 +107,15 @@ test_check $ctime1 -lt $ctime2
 expect 0 rmdir ${n0}
 
 # 148
-expect 0 symlink ${n1} ${n0}
-expect 0 lchown ${n0} 65534 65533
-ctime1=`${fstest} lstat ${n0} ctime`
-sleep 1
-expect 0 -u 65534 -g 65532 lchown ${n0} 65534 65532
-expect 65534,65532 lstat ${n0} uid,gid
-ctime2=`${fstest} lstat ${n0} ctime`
-test_check $ctime1 -lt $ctime2
-expect 0 unlink ${n0}
+#expect 0 symlink ${n1} ${n0}
+#expect 0 lchown ${n0} 65534 65533
+#ctime1=`${fstest} lstat ${n0} ctime`
+#sleep 1
+#expect 0 -u 65534 -g 65532 lchown ${n0} 65534 65532
+#expect 65534,65532 lstat ${n0} uid,gid
+#ctime2=`${fstest} lstat ${n0} ctime`
+#test_check $ctime1 -lt $ctime2
+#expect 0 unlink ${n0}
 # 154
 expect 0 create ${n0} 0644
 ctime1=`${fstest} stat ${n0} ctime`
@@ -134,13 +134,13 @@ test_check $ctime1 -lt $ctime2
 expect 0 rmdir ${n0}
 
 # 166
-expect 0 symlink ${n1} ${n0}
-ctime1=`${fstest} lstat ${n0} ctime`
-sleep 1
-expect 0 -- lchown ${n0} -1 -1
-ctime2=`${fstest} lstat ${n0} ctime`
-test_check $ctime1 -lt $ctime2
-expect 0 unlink ${n0}
+#expect 0 symlink ${n1} ${n0}
+#ctime1=`${fstest} lstat ${n0} ctime`
+#sleep 1
+#expect 0 -- lchown ${n0} -1 -1
+#ctime2=`${fstest} lstat ${n0} ctime`
+#test_check $ctime1 -lt $ctime2
+#expect 0 unlink ${n0}
 
 # unsuccessful chown(2) does not update ctime.
 # 170
@@ -161,13 +161,13 @@ test_check $ctime1 -eq $ctime2
 expect 0 rmdir ${n0}
 
 # 182
-expect 0 symlink ${n1} ${n0}
-ctime1=`${fstest} lstat ${n0} ctime`
-sleep 1
-expect EPERM -u 65534 -g 65534 lchown ${n0} 65534 65534
-ctime2=`${fstest} lstat ${n0} ctime`
-test_check $ctime1 -eq $ctime2
-expect 0 unlink ${n0}
+#expect 0 symlink ${n1} ${n0}
+#ctime1=`${fstest} lstat ${n0} ctime`
+#sleep 1
+#expect EPERM -u 65534 -g 65534 lchown ${n0} 65534 65534
+#ctime2=`${fstest} lstat ${n0} ctime`
+#test_check $ctime1 -eq $ctime2
+#expect 0 unlink ${n0}
 
 # 186
 cd ${cdir}

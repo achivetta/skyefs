@@ -63,19 +63,19 @@ done
 expect 0 chflags ${n1} none
 expect 0 unlink ${n1}
 
-expect 0 symlink ${n2} ${n1}
-expect 0 lchown ${n1} 65534 65534
-for flag in SF_IMMUTABLE SF_APPEND SF_NOUNLINK; do
-	expect 0 lchflags ${n1} ${flag}
-	jexpect 1 `pwd` EPERM lchflags ${n1} UF_IMMUTABLE
-	expect ${flag} lstat ${n1} flags
-	jexpect 1 `pwd` EPERM -u 65533 -g 65533 lchflags ${n1} UF_IMMUTABLE
-	expect ${flag} lstat ${n1} flags
-	jexpect 1 `pwd` EPERM -u 65534 -g 65534 lchflags ${n1} UF_IMMUTABLE
-	expect ${flag} lstat ${n1} flags
-done
-expect 0 lchflags ${n1} none
-expect 0 unlink ${n1}
+#expect 0 symlink ${n2} ${n1}
+#expect 0 lchown ${n1} 65534 65534
+#for flag in SF_IMMUTABLE SF_APPEND SF_NOUNLINK; do
+#	expect 0 lchflags ${n1} ${flag}
+#	jexpect 1 `pwd` EPERM lchflags ${n1} UF_IMMUTABLE
+#	expect ${flag} lstat ${n1} flags
+#	jexpect 1 `pwd` EPERM -u 65533 -g 65533 lchflags ${n1} UF_IMMUTABLE
+#	expect ${flag} lstat ${n1} flags
+#	jexpect 1 `pwd` EPERM -u 65534 -g 65534 lchflags ${n1} UF_IMMUTABLE
+#	expect ${flag} lstat ${n1} flags
+#done
+#expect 0 lchflags ${n1} none
+#expect 0 unlink ${n1}
 
 sysctl security.jail.chflags_allowed=${old} >/dev/null
 cd ${cdir}

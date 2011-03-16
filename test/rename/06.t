@@ -8,7 +8,7 @@ dir=`dirname $0`
 
 require chflags
 
-echo "1..84"
+echo "1..63"
 
 n0=`namegen`
 n1=`namegen`
@@ -31,11 +31,11 @@ done
 expect 0 chflags ${n0} none
 expect 0 rmdir ${n0}
 
-expect 0 symlink ${n1} ${n0}
-for flag in SF_IMMUTABLE UF_IMMUTABLE SF_APPEND UF_APPEND SF_NOUNLINK UF_NOUNLINK; do
-	expect 0 lchflags ${n0} ${flag}
-	expect ${flag} lstat ${n0} flags
-	expect EPERM rename ${n0} ${n1}
-done
-expect 0 lchflags ${n0} none
-expect 0 unlink ${n0}
+#expect 0 symlink ${n1} ${n0}
+#for flag in SF_IMMUTABLE UF_IMMUTABLE SF_APPEND UF_APPEND SF_NOUNLINK UF_NOUNLINK; do
+#	expect 0 lchflags ${n0} ${flag}
+#	expect ${flag} lstat ${n0} flags
+#	expect EPERM rename ${n0} ${n1}
+#done
+#expect 0 lchflags ${n0} none
+#expect 0 unlink ${n0}
