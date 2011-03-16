@@ -303,11 +303,6 @@ static int pvfs_getattr(PVFS_credentials *credentials, PVFS_object_ref *ref, str
             break;
         case PVFS_TYPE_DIRECTORY:
             stbuf->st_mode |= S_IFDIR;
-            /* NOTE: we have no good way to keep nlink consistent for 
-             * directories across clients; keep constant at 1.  Why 1?  If
-             * we go with 2, then find(1) gets confused and won't work
-             * properly withouth the -noleaf option */
-            stbuf->st_nlink = 1;
             break;
         case PVFS_TYPE_SYMLINK:
             stbuf->st_mode |= S_IFLNK;
@@ -315,6 +310,12 @@ static int pvfs_getattr(PVFS_credentials *credentials, PVFS_object_ref *ref, str
         default:
             break;
     }
+
+    /* NOTE: we have no good way to keep nlink consistent for 
+     * directories across clients; keep constant at 1.  Why 1?  If
+     * we go with 2, then find(1) gets confused and won't work
+     * properly withouth the -noleaf option */
+    stbuf->st_nlink = 1;
 
     stbuf->st_dev = ref->fs_id;
     stbuf->st_ino = ref->handle;
