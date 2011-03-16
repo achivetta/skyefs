@@ -41,14 +41,14 @@ static int get_path_components(const char *path, char *fileName, char *dirName)
     int pathlen = strlen(path);
 
     if (pathlen > MAX_PATHNAME_LEN)
-        return -E2BIG;
+        return -ENAMETOOLONG;
     
     p += pathlen;
 	while ( (*p) != '/' && p != path)
 		p--; // Come back till '/'
 
     if (pathlen - (int)(p - path) > MAX_FILENAME_LEN)
-        return -E2BIG;
+        return -ENAMETOOLONG;
 
     // Copy after slash till end into filename
 	strncpy(fileName, p+1, MAX_FILENAME_LEN); 
@@ -72,7 +72,7 @@ static int lookup(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pat
 	skye_lookup result;
 
     if (strlen(pathname) >= MAX_FILENAME_LEN)
-        return -E2BIG;
+        return -ENAMETOOLONG;
 
 	retval = skye_rpc_lookup_1(*credentails, *ref, pathname, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
