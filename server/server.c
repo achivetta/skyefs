@@ -55,9 +55,9 @@ static void * handler_thread(void *arg)
     SVCXPRT *svc = svcfd_create(fd, 0, 0);
     
     if(!svc_register(svc, SKYE_RPC_PROG, SKYE_RPC_VERSION, skye_rpc_prog_1, 0)) {
-        err_sys("ERROR: svc_register() error.\n");
+        err_msg("ERROR: svc_register() error.\n");
         svc_destroy(svc);
-        return 0;
+        goto leave;
     }
     
     dbg_msg(log_fp, "[%s] Enter RPC select().", __func__);
@@ -70,13 +70,12 @@ static void * handler_thread(void *arg)
         FD_SET(fd, &exceptfds);
 
         if (select(fd + 1, &readfds, NULL, &exceptfds, NULL) < 0){
-            err_msg("ERROR: during select() on a client socket.\n");
+            err_msg("ERROR: during select() on a client socket. %s\n", strerror(errno));
             break;
         }
 
         if (FD_ISSET(fd, &exceptfds)){
             dbg_msg(log_fp, "[%s] Leave RPC select(), descripter registered an exception.\n", __func__);
-            close(fd);
             break;
         }
 
@@ -85,6 +84,7 @@ static void * handler_thread(void *arg)
         }
     }
 
+leave:
     close(fd);
 
     dbg_msg(log_fp, "[%s] Stop thread handler.", __func__);
