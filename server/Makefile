@@ -9,7 +9,7 @@ all: $(TARGETS)
 
 $(OBJS) : $(HDRS)
 
-../skye_server : $(OBJS)
+../skye_server : $(OBJS) ../common.a
 	$(CC) -o $@ $^ ../common.a $(LDFLAGS)
 
 clean :
