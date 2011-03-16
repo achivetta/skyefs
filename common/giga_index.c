@@ -17,10 +17,10 @@
 #include <string.h>
 #include <assert.h>
 
-#include "Trace.h"
-#include "Defaults.h"
+#include "trace.h"
+#include "defaults.h"
 
-#include "GigaIndex.h"
+#include "giga_index.h"
 #include "sha.h"
 
 #define ARRAY_LEN(array)(sizeof(array)/sizeof((array)[0])) 
