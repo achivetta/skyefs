@@ -3,6 +3,7 @@
  */
 
 #include <asm-generic/errno-base.h>
+#include "defaults.h"
 
 #ifdef RPC_HDR
 %#include <pvfs2-types.h>
@@ -15,12 +16,8 @@
 %#pragma GCC diagnostic ignored "-Wunused-parameter"
 #endif
 
-/* FIXME: this should be global */
-#define MAX_PATHNAME    256
-#define MAX_BUF_SIZE    4096
-
-typedef string skye_pathname<MAX_PATHNAME>;
-typedef opaque skye_file_data<MAX_BUF_SIZE>;
+typedef string skye_pathname<MAX_PATHNAME_LEN>;
+typedef opaque skye_file_data<MAX_SIZE>;
 typedef long skye_bitmap;
 
 union skye_result switch (int errnum) {

@@ -38,10 +38,17 @@ static int get_path_components(const char *path, char *fileName, char *dirName)
 		return 0;
 	}
 
-	while ( (*p) != '\0')
-		p++; // Go to end of string
+    int pathlen = strlen(path);
+
+    if (pathlen > MAX_PATHNAME_LEN)
+        return -E2BIG;
+    
+    p += pathlen;
 	while ( (*p) != '/' && p != path)
 		p--; // Come back till '/'
+
+    if (pathlen - (int)(p - path) > MAX_FILENAME_LEN)
+        return -E2BIG;
 
     // Copy after slash till end into filename
 	strncpy(fileName, p+1, MAX_FILENAME_LEN); 
@@ -63,6 +70,9 @@ static int lookup(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pat
 {
 	enum clnt_stat retval;
 	skye_lookup result;
+
+    if (strlen(pathname) >= MAX_FILENAME_LEN)
+        return -E2BIG;
 
 	retval = skye_rpc_lookup_1(*credentails, *ref, pathname, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
@@ -339,13 +349,14 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 
     char filename[MAX_FILENAME_LEN] = {0};
     char pathname[MAX_PATHNAME_LEN] = {0};
+    int ret;
 
-    get_path_components(path, filename, pathname);
+    if ((ret = get_path_components(path, filename, pathname)) < 0)
+        return ret;
 
     if ((ref = malloc(sizeof(PVFS_object_ref))) == NULL)
         return -ENOMEM;
 
-    int ret;
     if ((ret = resolve(&credentials, pathname, ref)) < 0){
         free(ref);
         return ret;
@@ -380,10 +391,11 @@ int skye_mkdir(const char * path, mode_t mode)
 
     char filename[MAX_FILENAME_LEN] = {0};
     char pathname[MAX_PATHNAME_LEN] = {0};
-
-    get_path_components(path, filename, pathname);
-
     int ret;
+
+    if ((ret = get_path_components(path, filename, pathname)) < 0)
+        return ret;
+
     if ((ret = resolve(&credentials, pathname, &ref)) < 0)
         return ret;
 
@@ -406,14 +418,17 @@ int skye_rename(const char *src_path, const char *dst_path)
     PVFS_object_ref src_ref;
     char src_name[MAX_FILENAME_LEN] = {0};
     char src_dir[MAX_PATHNAME_LEN] = {0};
-    get_path_components(src_path, src_name, src_dir);
+    int ret;
+
+    if ((ret = get_path_components(src_path, src_name, src_dir)) < 0)
+        return ret;
 
     PVFS_object_ref dst_ref;
     char dst_name[MAX_FILENAME_LEN] = {0};
     char dst_dir[MAX_PATHNAME_LEN] = {0};
-    get_path_components(dst_path, dst_name, dst_dir);
+    if ((ret = get_path_components(dst_path, dst_name, dst_dir)) < 0)
+        return ret;
 
-    int ret;
     if ((ret = resolve(&credentials, src_dir, &src_ref)) < 0)
         return ret;
     if ((ret = resolve(&credentials, dst_dir, &dst_ref)) < 0)
@@ -437,7 +452,8 @@ int skye_remove(const char *path)
     char parent[MAX_PATHNAME_LEN], filename[MAX_FILENAME_LEN];
     int ret;
 
-    get_path_components(path, filename, parent);
+    if ((ret = get_path_components(path, filename, parent)) < 0)
+        return ret;
 
     if ((ret = resolve(&credentials, parent, &ref)) < 0)
         return ret;
