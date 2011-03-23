@@ -40,9 +40,6 @@ static void server_socket();
 static void setup_listener(int listen_fd);
 static void main_select_loop(const int listen_fd);
 
-//FIXME: becomes dynamically allocated based on rlimit
-static uint32_t conn_fd_table[FD_SETSIZE]; 
-
 static void sig_handler(const int sig)
 {
     (void)sig;
@@ -56,37 +53,39 @@ static void * handler_thread(void *arg)
     
     int fd = (int) (long) arg;
     SVCXPRT *svc = svcfd_create(fd, 0, 0);
-    uint32_t start_gen = conn_fd_table[fd];
     
     if(!svc_register(svc, SKYE_RPC_PROG, SKYE_RPC_VERSION, skye_rpc_prog_1, 0)) {
-        err_sys("ERROR: svc_register() error.\n");
+        err_msg("ERROR: svc_register() error.\n");
         svc_destroy(svc);
-        return 0;
+        goto leave;
     }
     
     dbg_msg(log_fp, "[%s] Enter RPC select().", __func__);
     while (1) {
-        fd_set fds;
-        FD_ZERO(&fds);
-        FD_SET(fd, &fds);
+        fd_set readfds, exceptfds;
+        FD_ZERO(&readfds);
+        FD_SET(fd, &readfds);
 
-        svc_getreqset(&fds);
+        FD_ZERO(&exceptfds);
+        FD_SET(fd, &exceptfds);
 
-        //FIXME: need to do something to check if the socket is closed??
-        if (conn_fd_table[fd] != start_gen) {
-            dbg_msg(log_fp, "[%s] Leave RPC select()\n", __func__);
+        if (select(fd + 1, &readfds, NULL, &exceptfds, NULL) < 0){
+            err_msg("ERROR: during select() on a client socket. %s\n", strerror(errno));
             break;
         }
 
-        // Check if the socket is closed
-        struct sockaddr_in sin;
-        socklen_t sin_len = sizeof(sin);
-        if (getpeername(fd, (struct sockaddr *) &sin, &sin_len) < 0) {
-            dbg_msg(log_fp, "[%s] Leave RPC select() (getpeername)", __func__);
+        if (FD_ISSET(fd, &exceptfds)){
+            dbg_msg(log_fp, "[%s] Leave RPC select(), descripter registered an exception.\n", __func__);
             break;
         }
 
+        if (FD_ISSET(fd, &readfds)){
+            svc_getreqset(&readfds);
+        }
     }
+
+leave:
+    close(fd);
 
     dbg_msg(log_fp, "[%s] Stop thread handler.", __func__);
 
@@ -114,24 +113,21 @@ static void main_select_loop(const int listen_fd)
         socklen_t len = sizeof(remote_addr);
         conn_fd = accept(listen_fd, (struct sockaddr *) &remote_addr, &len);
         if (conn_fd < 0) {
-            //FIXME: how to handle this error? close(listenfd)? exit(?)
-            //close(listen_fd); 
             err_sys("ERROR: during accept(). %s\n",strerror(errno));
+            continue;
         }
         dbg_msg(log_fp, "[%s] connection accept()ed from {%s:%d}.", __func__, 
                inet_ntoa(remote_addr.sin_addr),ntohs(remote_addr.sin_port));
         
-        conn_fd_table[conn_fd]++;
         pthread_t tid;
         if (pthread_create(&tid, 0, handler_thread, (void *)(unsigned long long)conn_fd) < 0) {
             err_msg("ERROR: during pthread_create().\n");
             close(conn_fd);
-            //FIXME: should we exit with an error???
-        } else {
-            // Thread detach kicks in if you are running the client and server
-            // on the localhost (127.0.0.1). 
-            dbg_msg(log_fp, "[%s] detaching the handler thread.", __func__);
-            pthread_detach(tid);
+            continue;
+        } 
+
+        if (pthread_detach(tid) < 0){
+            err_msg("ERROR: unable to detach thread().\n");
         }
     }
     

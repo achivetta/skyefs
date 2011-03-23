@@ -29,10 +29,17 @@ static int get_path_components(const char *path, char *fileName, char *dirName)
 		return 0;
 	}
 
-	while ( (*p) != '\0')
-		p++; // Go to end of string
+    int pathlen = strlen(path);
+
+    if (pathlen > MAX_PATHNAME_LEN)
+        return -ENAMETOOLONG;
+    
+    p += pathlen;
 	while ( (*p) != '/' && p != path)
 		p--; // Come back till '/'
+
+    if (pathlen - (int)(p - path) > MAX_FILENAME_LEN)
+        return -ENAMETOOLONG;
 
     // Copy after slash till end into filename
 	strncpy(fileName, p+1, MAX_FILENAME_LEN); 
@@ -55,6 +62,9 @@ static int lookup(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pat
 	enum clnt_stat retval;
 	skye_lookup result;
     CLIENT *rpc_client = get_client(0);
+
+    if (strlen(pathname) >= MAX_FILENAME_LEN)
+        return -ENAMETOOLONG;
 
 	retval = skye_rpc_lookup_1(*credentails, *ref, pathname, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
@@ -127,7 +137,11 @@ static int pvfs_readdir(PVFS_credentials *credentials, PVFS_object_ref *ref, voi
             if (filler(buf, cur_file, NULL, 0))
                 break;
         }
-        token += rd_response.pvfs_dirent_outcount;
+        
+        if (!token)
+            token = rd_response.pvfs_dirent_outcount - 1;
+        else
+            token += rd_response.pvfs_dirent_outcount;
 
         if (rd_response.pvfs_dirent_outcount) {
             free(rd_response.dirent_array);
@@ -285,11 +299,6 @@ static int pvfs_getattr(PVFS_credentials *credentials, PVFS_object_ref *ref, str
             break;
         case PVFS_TYPE_DIRECTORY:
             stbuf->st_mode |= S_IFDIR;
-            /* NOTE: we have no good way to keep nlink consistent for 
-             * directories across clients; keep constant at 1.  Why 1?  If
-             * we go with 2, then find(1) gets confused and won't work
-             * properly withouth the -noleaf option */
-            stbuf->st_nlink = 1;
             break;
         case PVFS_TYPE_SYMLINK:
             stbuf->st_mode |= S_IFLNK;
@@ -297,6 +306,12 @@ static int pvfs_getattr(PVFS_credentials *credentials, PVFS_object_ref *ref, str
         default:
             break;
     }
+
+    /* NOTE: we have no good way to keep nlink consistent for 
+     * directories across clients; keep constant at 1.  Why 1?  If
+     * we go with 2, then find(1) gets confused and won't work
+     * properly withouth the -noleaf option */
+    stbuf->st_nlink = 1;
 
     stbuf->st_dev = ref->fs_id;
     stbuf->st_ino = ref->handle;
@@ -333,13 +348,14 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 
     char filename[MAX_FILENAME_LEN] = {0};
     char pathname[MAX_PATHNAME_LEN] = {0};
+    int ret;
 
-    get_path_components(path, filename, pathname);
+    if ((ret = get_path_components(path, filename, pathname)) < 0)
+        return ret;
 
     if ((ref = malloc(sizeof(PVFS_object_ref))) == NULL)
         return -ENOMEM;
 
-    int ret;
     if ((ret = resolve(&credentials, pathname, ref)) < 0){
         free(ref);
         return ret;
@@ -376,10 +392,11 @@ int skye_mkdir(const char * path, mode_t mode)
 
     char filename[MAX_FILENAME_LEN] = {0};
     char pathname[MAX_PATHNAME_LEN] = {0};
-
-    get_path_components(path, filename, pathname);
-
     int ret;
+
+    if ((ret = get_path_components(path, filename, pathname)) < 0)
+        return ret;
+
     if ((ret = resolve(&credentials, pathname, &ref)) < 0)
         return ret;
 
@@ -403,14 +420,17 @@ int skye_rename(const char *src_path, const char *dst_path)
     PVFS_object_ref src_ref;
     char src_name[MAX_FILENAME_LEN] = {0};
     char src_dir[MAX_PATHNAME_LEN] = {0};
-    get_path_components(src_path, src_name, src_dir);
+    int ret;
+
+    if ((ret = get_path_components(src_path, src_name, src_dir)) < 0)
+        return ret;
 
     PVFS_object_ref dst_ref;
     char dst_name[MAX_FILENAME_LEN] = {0};
     char dst_dir[MAX_PATHNAME_LEN] = {0};
-    get_path_components(dst_path, dst_name, dst_dir);
+    if ((ret = get_path_components(dst_path, dst_name, dst_dir)) < 0)
+        return ret;
 
-    int ret;
     if ((ret = resolve(&credentials, src_dir, &src_ref)) < 0)
         return ret;
     if ((ret = resolve(&credentials, dst_dir, &dst_ref)) < 0)
@@ -434,7 +454,8 @@ int skye_remove(const char *path)
     char parent[MAX_PATHNAME_LEN], filename[MAX_FILENAME_LEN];
     int ret;
 
-    get_path_components(path, filename, parent);
+    if ((ret = get_path_components(path, filename, parent)) < 0)
+        return ret;
 
     if ((ret = resolve(&credentials, parent, &ref)) < 0)
         return ret;
