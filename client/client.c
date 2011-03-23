@@ -2,6 +2,7 @@
 #include "common/skye_rpc.h"
 #include "client.h"
 #include "operations.h"
+#include "connection.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -21,11 +22,8 @@
 struct client_options client_options;
 struct PVFS_sys_mntent pvfs_mntent;
 PVFS_fs_id pvfs_fsid;
-CLIENT *rpc_client;
 
 static int pvfs_connect();
-static int rpc_connect();
-static void rpc_disconnect();
 static void* skye_init(struct fuse_conn_info *conn);
 static void skye_destroy(void *);
 
@@ -215,31 +213,4 @@ static int pvfs_connect()
     pvfs_fsid = me->fs_id;
 
     return ret;
-}
-
-static int rpc_connect()
-{
-    int sock = RPC_ANYSOCK;
-
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(client_options.port);
-    if (inet_pton(AF_INET, client_options.host, &addr.sin_addr) < 0) {
-        fprintf(stderr, "ERROR: handling source IP (%s). %s \n",
-                DEFAULT_IP, strerror(errno));
-        exit(EXIT_FAILURE);
-    } 
-
-    rpc_client = clnttcp_create (&addr, SKYE_RPC_PROG, SKYE_RPC_VERSION, &sock, 0, 0);
-    if (rpc_client == NULL) {
-        clnt_pcreateerror (NULL);
-        exit (EXIT_FAILURE);
-    }
-
-    return 0;
-}
-
-static void rpc_disconnect()
-{
-	clnt_destroy (rpc_client);
 }

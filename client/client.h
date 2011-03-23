@@ -11,7 +11,6 @@ struct client_options {
 };
 
 extern PVFS_fs_id pvfs_fsid;
-extern CLIENT *rpc_client;
 extern struct client_options client_options;
 
 #endif

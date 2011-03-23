@@ -1,6 +1,7 @@
 #include "common/skye_rpc.h"
 #include "common/defaults.h"
 #include "client.h"
+#include "connection.h"
 #include "common/trace.h"
 
 #include <rpc/rpc.h>
@@ -63,6 +64,7 @@ static int lookup(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pat
 {
 	enum clnt_stat retval;
 	skye_lookup result;
+    CLIENT *rpc_client = get_client(0);
 
 	retval = skye_rpc_lookup_1(*credentails, *ref, pathname, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
@@ -334,6 +336,8 @@ int skye_getattr(const char *path, struct stat *stbuf)
 
 int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
+    CLIENT *rpc_client = get_client(0);
+
     PVFS_object_ref *ref;
     PVFS_credentials credentials; gen_credentials(&credentials);
 
@@ -375,6 +379,8 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 
 int skye_mkdir(const char * path, mode_t mode)
 {
+    CLIENT *rpc_client = get_client(0);
+
     PVFS_object_ref ref;
     PVFS_credentials credentials; gen_credentials(&credentials);
 
@@ -401,6 +407,7 @@ int skye_mkdir(const char * path, mode_t mode)
 
 int skye_rename(const char *src_path, const char *dst_path)
 {
+    CLIENT *rpc_client = get_client(0);
     PVFS_credentials credentials; gen_credentials(&credentials);
 
     PVFS_object_ref src_ref;
