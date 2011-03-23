@@ -31,7 +31,7 @@
 typedef unsigned char bitmap_t;
 
 // we want to avoid the signed and unsigned bit business; just discard it.
-#define BITS_PER_MAP ((sizeof(bitmap_t)*8)-1)
+#define BITS_PER_MAP ((int)(sizeof(bitmap_t)*8)-1)
 
 #define MAX_BMAP_LEN ( (((1<<MAX_RADIX)%(BITS_PER_MAP)) == 0) ? ((1<<MAX_RADIX)/(BITS_PER_MAP)) : ((1<<MAX_RADIX)/(BITS_PER_MAP))+1 ) 
 

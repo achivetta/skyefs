@@ -120,9 +120,9 @@ void giga_init_mapping(struct GigaMapping *mapping, int flag)
         //case SPLIT_TYPE_NEVER_SPLIT:
         case SPLIT_T_NO_SPLITTING_EVER:
             assert(flag != -1);
-            if (flag < BITS_PER_MAP)
+            if (flag < BITS_PER_MAP){
                 mapping->bitmap[i] = (1<<flag)-1;
-            else {
+            } else {
                 fprintf(log_fp, "[%s] XXX: need to fixx this dude!!!\n",__func__);
                 exit(1);
             }
