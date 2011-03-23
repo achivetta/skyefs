@@ -5,9 +5,9 @@
 #include <rpc/rpc.h>
 
 struct client_options {
-   char* host;
-   int port;
    char* pvfs_spec;
+   int servercount;
+   const char ** serverlist;
 };
 
 extern PVFS_fs_id pvfs_fsid;

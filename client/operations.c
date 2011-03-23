@@ -12,18 +12,8 @@
 /* FIXME: see pvfs:src/apps/admin/pvfs2-cp.c for how to do permissions correctly
  */
 
-#define pvfs2errno(n) (-1)*(PVFS_get_errno_mapping(n))
-
 /* TODO: should the structure we are storing in the fuse_file_info->fh also have
  * credentials? */
-
-/* DANGER: depends on internals of PVFS struct
- * FIXME should this use PVFS_util_gen_credentials()? */
-static void gen_credentials(PVFS_credentials *credentials)
-{
-    credentials->uid = fuse_get_context()->uid;
-    credentials->gid = fuse_get_context()->gid;
-}
 
 static int get_path_components(const char *path, char *fileName, char *dirName)
 {
