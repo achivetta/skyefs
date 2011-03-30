@@ -7,6 +7,8 @@
 #include "skye_rpc.h"
 #include "skye_rpc_helper.h"
 
+#include "giga_index.h"
+
 /* DANGER, WILL ROBINSON!: this depends on the internal details of
  * PVFS_object_ref and could break in newer/older PVFS versions
  */
@@ -40,3 +42,13 @@ bool_t xdr_mode_t(XDR *xdrs, mode_t *mode)
     return TRUE;
 }
 
+bool_t xdr_giga_mapping(XDR *xdrs, struct giga_mapping_t *objp)
+{
+    if (!xdr_u_int(xdrs, &objp->curr_radix))
+        return FALSE;
+    if (!(xdr_vector(xdrs, (char *)objp->bitmap, MAX_BMAP_LEN,
+                     sizeof(char), (xdrproc_t) xdr_char)))
+        return FALSE;
+
+    return TRUE;
+}

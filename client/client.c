@@ -90,6 +90,7 @@ static void* skye_init(struct fuse_conn_info *conn)
     if ((ret = rpc_connect()) < 0){
         err_quit("Unable to establish RPC connections (%d). Quitting.\n", ret);
     }
+
     return NULL;
 }
 
