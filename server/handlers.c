@@ -1,7 +1,8 @@
 #include "common/trace.h"
 #include "common/skye_rpc.h"
-#include "server.h"
 #include "common/defaults.h"
+#include "server.h"
+#include "cache.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -31,11 +32,26 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 {
     (void)rqstp;
 
+    struct skye_directory *dir = cache_fetch(&parent);
+    if (!dir){
+        result->errnum = -EIO;
+        return true;
+    }
+
+    int index = giga_get_index_for_file(&dir->mapping, (const char*)path);
+
+    cache_return(dir);
+
+    char physical_path[MAX_LEN];
+    snprintf(physical_path, MAX_LEN, "p%05d/%s", index, (const char*)path);
+
+    dbg_msg(log_fp, "[%s] doing PVFS lookup for %s", __func__, physical_path);
+
     PVFS_sysresp_lookup lk_response;
     int ret;
 
     memset(&lk_response, 0, sizeof(lk_response));
-    ret = PVFS_sys_ref_lookup(srv_settings.fs_id, (char *)path, parent,
+    ret = PVFS_sys_ref_lookup(srv_settings.fs_id, physical_path, parent,
                               &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
     if ( ret < 0 ) {
@@ -49,11 +65,47 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     return true;;
 }
 
+static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const char *name){
+    struct skye_directory *dir = cache_fetch(handle);
+    if (!dir)
+        return -EIO;
+
+    int index = giga_get_index_for_file(&dir->mapping, name);
+
+    cache_return(dir);
+
+    char physical_path[MAX_LEN];
+    snprintf(physical_path, MAX_LEN, "p%05d", index);
+
+    dbg_msg(log_fp, "[%s] descending into %s", __func__, physical_path);
+
+    PVFS_sysresp_lookup lk_response;
+    int ret;
+
+    memset(&lk_response, 0, sizeof(lk_response));
+    ret = PVFS_sys_ref_lookup(srv_settings.fs_id, physical_path, *handle,
+                              creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
+                              PVFS_HINT_NULL);
+    if ( ret < 0 )
+        return -1 * PVFS_get_errno_mapping(ret);
+
+    *handle = lk_response.ref;
+
+    return 0;
+    
+}
+
 bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
                              skye_pathname filename, mode_t mode, 
                              skye_lookup *result, struct svc_req *rqstp)
 {
     (void)rqstp;
+    int rc;
+
+    if ((rc = enter_bucket(&creds, &parent, (char*)filename)) < 0){
+        result->errnum = rc;
+        return true;
+    }
 
     PVFS_sysresp_create resp_create;
 
@@ -68,7 +120,7 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     attr.mask = PVFS_ATTR_SYS_ALL_SETABLE;
     attr.dfile_count = 0;
 
-    int rc = PVFS_sys_create(filename, parent, attr, &creds, NULL, &resp_create,
+    rc = PVFS_sys_create(filename, parent, attr, &creds, NULL, &resp_create,
                              PVFS_SYS_LAYOUT_DEFAULT, PVFS_HINT_NULL);
     if (rc != 0){
         if ( rc == -PVFS_ENOENT )
@@ -89,6 +141,12 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
                             skye_result *result, struct svc_req *rqstp)
 {
     (void)rqstp;
+    int rc;
+
+    if ((rc = enter_bucket(&creds, &parent, (char*)dirname)) < 0){
+        result->errnum = rc;
+        return true;
+    }
 
     PVFS_sysresp_mkdir resp_mkdir;
 
@@ -100,7 +158,17 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     attr.perms = mode;
     attr.mask = PVFS_ATTR_SYS_ALL_SETABLE;
 
-    int rc = PVFS_sys_mkdir(dirname, parent, attr, &creds, &resp_mkdir,
+    rc = PVFS_sys_mkdir(dirname, parent, attr, &creds, &resp_mkdir,
+                            PVFS_HINT_NULL);
+    if (rc != 0)
+        result->errnum = -1 * PVFS_get_errno_mapping(rc);
+    else
+        result->errnum = 0;
+
+    /* FIXME: handle cleanup in the case that this fails */
+    parent = resp_mkdir.ref;
+    dirname = "p00000";
+    rc = PVFS_sys_mkdir(dirname, parent, attr, &creds, &resp_mkdir,
                             PVFS_HINT_NULL);
     if (rc != 0)
         result->errnum = -1 * PVFS_get_errno_mapping(rc);
@@ -116,8 +184,19 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
                              skye_result *result,  struct svc_req *rqstp)
 {
     (void)rqstp;
+    int rc;
 
-    int rc = PVFS_sys_rename(src_name, src_parent, dst_name, dst_parent,
+    if ((rc = enter_bucket(&creds, &src_parent, (char*)src_name)) < 0){
+        result->errnum = rc;
+        return true;
+    }
+
+    if ((rc = enter_bucket(&creds, &dst_parent, (char*)dst_name)) < 0){
+        result->errnum = rc;
+        return true;
+    }
+
+    rc = PVFS_sys_rename(src_name, src_parent, dst_name, dst_parent,
                              &creds, PVFS_HINT_NULL);
     if (rc != 0)
         result->errnum = -1 * PVFS_get_errno_mapping(rc);

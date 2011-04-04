@@ -165,9 +165,6 @@ int skye_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t of
     if ( (ret = resolve(&credentials, path, &ref)) < 0 )
         return ret;
 
-    return pvfs_readdir(&credentials, &ref, buf, filler);
-
-    /* Giga+ version lies below 
     unsigned int pvfs_dirent_incount = 32; // reasonable chank size
     PVFS_ds_position token = 0;
     PVFS_sysresp_readdir rd_response;
@@ -182,9 +179,13 @@ int skye_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t of
             return pvfs2errno(ret);
 
         for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
+            // FIXME: dirty hack to figure out what's a partition
+            if (rd_response.dirent_array[i].d_name[0] != 'p')
+                continue;
+            dbg_msg(stderr, "doing a recursive readdir into %s", rd_response.dirent_array[i].d_name);
             ref.handle = rd_response.dirent_array[i].handle; 
             // FIXME: error handleing
-            pvfs_readdir(&ref, buf, filler);
+            pvfs_readdir(&credentials, &ref, buf, filler);
         }
         token += rd_response.pvfs_dirent_outcount;
 
@@ -194,7 +195,8 @@ int skye_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t of
         }
 
     } while (rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
-    */
+
+    return 0;
 }
 
 /* function body taken from pvfs2fuse.c */
