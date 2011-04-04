@@ -182,7 +182,6 @@ int skye_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t of
             // FIXME: dirty hack to figure out what's a partition
             if (rd_response.dirent_array[i].d_name[0] != 'p')
                 continue;
-            dbg_msg(stderr, "doing a recursive readdir into %s", rd_response.dirent_array[i].d_name);
             ref.handle = rd_response.dirent_array[i].handle; 
             // FIXME: error handleing
             pvfs_readdir(&credentials, &ref, buf, filler);
@@ -456,15 +455,25 @@ int skye_remove(const char *path)
     char parent[MAX_PATHNAME_LEN], filename[MAX_FILENAME_LEN];
     int ret;
 
+
     if ((ret = get_path_components(path, filename, parent)) < 0)
         return ret;
 
     if ((ret = resolve(&credentials, parent, &ref)) < 0)
         return ret;
 
-    ret = PVFS_sys_remove(filename, ref, &credentials, PVFS_HINT_NULL);
-    if (ret < 0)
-        return pvfs2errno(ret);
+    CLIENT *rpc_client = get_client(0);
+    skye_result result;
+    enum clnt_stat retval;
+
+    retval = skye_rpc_remove_1(credentials, ref, filename, &result, rpc_client);
+	if (retval != RPC_SUCCESS) {
+		clnt_perror (rpc_client, "RPC lookup failed");
+        return -EIO;
+	}
+
+    if (result.errnum < 0)
+        return result.errnum;
 
     return 0;
 }

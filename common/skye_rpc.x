@@ -50,6 +50,6 @@ program SKYE_RPC_PROG {                 /* program number */
 		skye_result SKYE_RPC_RENAME(PVFS_credentials, skye_pathname, PVFS_object_ref,
 				skye_pathname, PVFS_object_ref) = 103;
 		skye_result SKYE_RPC_REMOVE(PVFS_credentials, PVFS_object_ref,
-				skye_pathname) = 102; 
+				skye_pathname) = 104; 
 	} = 1;
 } = 522222; /* FIXME: Is this a okay value for program number? */

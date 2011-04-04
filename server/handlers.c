@@ -65,7 +65,8 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     return true;;
 }
 
-static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const char *name){
+static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const char *name)
+{
     struct skye_directory *dir = cache_fetch(handle);
     if (!dir)
         return -EIO;
@@ -175,6 +176,29 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     else
         result->errnum = 0;
 
+	return true;
+}
+
+bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
+                            skye_pathname filename, skye_result *result, 
+                            struct svc_req *rqstp)
+{
+    (void)rqstp;
+    int rc;
+
+    if ((rc = enter_bucket(&creds, &parent, (char*)filename)) < 0){
+        result->errnum = rc;
+        return true;
+    }
+
+    rc = PVFS_sys_remove(filename, parent, &creds, PVFS_HINT_NULL);
+
+    if (rc != 0)
+        result->errnum = -1 * PVFS_get_errno_mapping(rc);
+    else
+        result->errnum = 0;
+
+    
 	return true;
 }
 
