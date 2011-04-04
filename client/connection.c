@@ -61,8 +61,6 @@ CLIENT *get_client(int serverid){
 
 static int rpc_host_connect(CLIENT **rpc_client, const char *host)
 {
-    host = "localhost";
-
     int sock = RPC_ANYSOCK;
 
     struct hostent *he;
