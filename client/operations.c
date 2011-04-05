@@ -1,8 +1,9 @@
 #include "common/skye_rpc.h"
 #include "common/defaults.h"
-#include "client.h"
 #include "connection.h"
 #include "common/trace.h"
+#include "cache.h"
+#include "client.h"
 
 #include <rpc/rpc.h>
 #include <fuse.h>
@@ -56,15 +57,32 @@ static int get_path_components(const char *path, char *fileName, char *dirName)
 	return 0;
 }
 
+static int get_server_for_file(PVFS_object_ref *handle, const char *name)
+{
+    int server_id = 0;
+    
+    struct skye_directory *dir = cache_fetch(handle);
+    if (!dir)
+        return -EIO;
+    
+    int index = giga_get_index_for_file(&dir->mapping, name);
+
+    cache_return(dir);
+
+    return server_id;
+}
+
 /** Updates parent_ref to point to the specified child */
 static int lookup(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pathname)
 {
 	enum clnt_stat retval;
 	skye_lookup result;
-    CLIENT *rpc_client = get_client(0);
-
+    
     if (strlen(pathname) >= MAX_FILENAME_LEN)
         return -ENAMETOOLONG;
+    
+    int server_id = get_server_for_file(ref, pathname);
+    CLIENT *rpc_client = get_connection(server_id);
 
 	retval = skye_rpc_lookup_1(*credentails, *ref, pathname, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
@@ -342,8 +360,6 @@ int skye_getattr(const char *path, struct stat *stbuf)
 
 int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
-    CLIENT *rpc_client = get_client(0);
-
     PVFS_object_ref *ref;
     PVFS_credentials credentials; gen_credentials(&credentials);
 
@@ -364,6 +380,9 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 
     enum clnt_stat retval;
     skye_lookup result;
+    
+    int server_id = get_server_for_file(ref, path);
+    CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_create_1(credentials, *ref, filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
@@ -386,8 +405,6 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 
 int skye_mkdir(const char * path, mode_t mode)
 {
-    CLIENT *rpc_client = get_client(0);
-
     PVFS_object_ref ref;
     PVFS_credentials credentials; gen_credentials(&credentials);
 
@@ -403,6 +420,9 @@ int skye_mkdir(const char * path, mode_t mode)
 
     enum clnt_stat retval;
     skye_result result;
+    
+    int server_id = get_server_for_file(&ref, path);
+    CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_mkdir_1(credentials, ref, filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
@@ -415,7 +435,6 @@ int skye_mkdir(const char * path, mode_t mode)
 
 int skye_rename(const char *src_path, const char *dst_path)
 {
-    CLIENT *rpc_client = get_client(0);
     PVFS_credentials credentials; gen_credentials(&credentials);
 
     PVFS_object_ref src_ref;
@@ -439,6 +458,10 @@ int skye_rename(const char *src_path, const char *dst_path)
 
     enum clnt_stat retval;
     skye_result result;
+    
+    int server_id = get_server_for_file(&dst_ref, dst_path);
+    CLIENT *rpc_client = get_connection(server_id);
+
     retval = skye_rpc_rename_1(credentials, src_name, src_ref, dst_name, dst_ref, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC create failed");
@@ -462,9 +485,11 @@ int skye_remove(const char *path)
     if ((ret = resolve(&credentials, parent, &ref)) < 0)
         return ret;
 
-    CLIENT *rpc_client = get_client(0);
     skye_result result;
     enum clnt_stat retval;
+    
+    int server_id = get_server_for_file(&ref, path);
+    CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_remove_1(credentials, ref, filename, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
