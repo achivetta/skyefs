@@ -6,15 +6,15 @@
 #include "common/uthash.h"
 
 struct skye_bucket {
-    int index;
-    int state;
+    int index;          // ID of the bucket (the 'i' in P_i)
+    int state;          // status flag indicating if the bucket is splitting
     UT_hash_handle hh;
 };
 
 struct skye_directory {
     struct giga_mapping_t mapping;
     int refcount;
-    PVFS_object_ref handle;
+    PVFS_object_ref handle;         // key for the hash table
     struct skye_bucket *buckets;
     UT_hash_handle hh;
 };
