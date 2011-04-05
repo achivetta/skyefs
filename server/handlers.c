@@ -93,7 +93,6 @@ static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const 
     *handle = lk_response.ref;
 
     return 0;
-    
 }
 
 bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
@@ -179,6 +178,26 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 	return true;
 }
 
+int isdir(PVFS_credentials *creds, PVFS_object_ref *handle){
+    PVFS_sysresp_getattr getattr_response;
+    PVFS_sys_attr*	attrs;
+
+    int			ret;
+
+    memset(&getattr_response,0, sizeof(PVFS_sysresp_getattr));
+
+    ret = PVFS_sys_getattr(*handle, PVFS_ATTR_SYS_ALL_NOHINT, creds,
+                           &getattr_response, PVFS_HINT_NULL);
+    if ( ret < 0 )
+        return 0;
+
+    attrs = &getattr_response.attr;
+
+    if (attrs->objtype == PVFS_TYPE_DIRECTORY)
+        return 1;
+    return 0;
+} 
+
 bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
                             skye_pathname filename, skye_result *result, 
                             struct svc_req *rqstp)
@@ -189,6 +208,21 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     if ((rc = enter_bucket(&creds, &parent, (char*)filename)) < 0){
         result->errnum = rc;
         return true;
+    }
+
+    PVFS_sysresp_lookup lk_response;
+
+    memset(&lk_response, 0, sizeof(lk_response));
+    rc = PVFS_sys_ref_lookup(srv_settings.fs_id, filename, parent, &creds,
+                              &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
+                              PVFS_HINT_NULL);
+    if ( rc < 0 )
+        return -1 * PVFS_get_errno_mapping(rc);
+
+    if (isdir(&creds, &(lk_response.ref))){
+        rc = PVFS_sys_remove("p00000", lk_response.ref, &creds, PVFS_HINT_NULL);
+        if ( rc < 0 )
+            return -1 * PVFS_get_errno_mapping(rc);
     }
 
     rc = PVFS_sys_remove(filename, parent, &creds, PVFS_HINT_NULL);
