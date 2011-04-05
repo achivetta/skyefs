@@ -82,7 +82,7 @@ static int lookup(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pat
         return -ENAMETOOLONG;
     
     int server_id = get_server_for_file(ref, pathname);
-    CLIENT *rpc_client = get_client(server_id);
+    CLIENT *rpc_client = get_connection(server_id);
 
 	retval = skye_rpc_lookup_1(*credentails, *ref, pathname, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
@@ -382,7 +382,7 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
     skye_lookup result;
     
     int server_id = get_server_for_file(ref, path);
-    CLIENT *rpc_client = get_client(server_id);
+    CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_create_1(credentials, *ref, filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
@@ -422,7 +422,7 @@ int skye_mkdir(const char * path, mode_t mode)
     skye_result result;
     
     int server_id = get_server_for_file(&ref, path);
-    CLIENT *rpc_client = get_client(server_id);
+    CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_mkdir_1(credentials, ref, filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
@@ -460,7 +460,7 @@ int skye_rename(const char *src_path, const char *dst_path)
     skye_result result;
     
     int server_id = get_server_for_file(&dst_ref, dst_path);
-    CLIENT *rpc_client = get_client(server_id);
+    CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_rename_1(credentials, src_name, src_ref, dst_name, dst_ref, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
@@ -489,7 +489,7 @@ int skye_remove(const char *path)
     enum clnt_stat retval;
     
     int server_id = get_server_for_file(&ref, path);
-    CLIENT *rpc_client = get_client(server_id);
+    CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_remove_1(credentials, ref, filename, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {

@@ -53,7 +53,8 @@ static int pvfs_generate_serverlist(){
     return 0;
 }
 
-CLIENT *get_client(int serverid){
+CLIENT *get_connection(int serverid)
+{
     assert(serverid >= 0 && serverid < client_options.servercount);
 
     return rpc_clients[serverid];
