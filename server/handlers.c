@@ -45,8 +45,6 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     char physical_path[MAX_LEN];
     snprintf(physical_path, MAX_LEN, "p%05d/%s", index, (const char*)path);
 
-    dbg_msg(log_fp, "[%s] doing PVFS lookup for %s", __func__, physical_path);
-
     PVFS_sysresp_lookup lk_response;
     int ret;
 
@@ -77,8 +75,6 @@ static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const 
 
     char physical_path[MAX_LEN];
     snprintf(physical_path, MAX_LEN, "p%05d", index);
-
-    dbg_msg(log_fp, "[%s] descending into %s", __func__, physical_path);
 
     PVFS_sysresp_lookup lk_response;
     int ret;
