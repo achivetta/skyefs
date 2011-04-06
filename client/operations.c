@@ -493,7 +493,7 @@ int skye_remove(const char *path)
 
     retval = skye_rpc_remove_1(credentials, ref, filename, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
-		clnt_perror (rpc_client, "RPC lookup failed");
+		clnt_perror (rpc_client, "RPC remove failed");
         return -EIO;
 	}
 
