@@ -43,20 +43,6 @@ struct giga_mapping_t {
     unsigned int curr_radix;            // current radix (depth in tree)
 }; 
 
-// GIGA state associated with each directory. Clients and servers use this
-// structure, with its mutex locks, for all operations.
-//
-struct DirectoryState {
-    pthread_mutex_t     mutex;
-    struct giga_mapping_t  mapping;
-};
-
-struct BucketState {
-    pthread_mutex_t     mutex;
-    //pthread_rwlock_t     mutex;
-    int bkt_size;
-};
-
 // Hash the component name (hash_key) to return the hash value.
 //
 void giga_hash_name(const char *hash_key, char hash_value[]);
