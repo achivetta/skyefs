@@ -41,15 +41,13 @@ typedef int index_t;                    // Index is the position in the bitmap
 struct giga_mapping_t {
     bitmap_t bitmap[MAX_BMAP_LEN];      // bitmap
     unsigned int curr_radix;            // current radix (depth in tree)
+    unsigned int zeroth_server;
+    unsigned int server_count;
 }; 
 
 // Hash the component name (hash_key) to return the hash value.
 //
 void giga_hash_name(const char *hash_key, char hash_value[]);
-
-// For a given directory path name, return the zeroth server.
-//
-int giga_create_dir(const char *path_name, int num_servers);
 
 // Initialize the mapping table.
 //
@@ -100,7 +98,12 @@ index_t giga_index_for_force_splitting(index_t index);
 index_t giga_get_index_for_file(struct giga_mapping_t *mapping, 
                                 const char *file_name); 
 
+index_t giga_get_server_for_file(struct giga_mapping_t *mapping,
+                                 const char *file_name);
+
+// FIXME: what's this for?
 index_t giga_get_index_for_backup(index_t index); 
+
 index_t get_split_index_for_newserver(index_t index);
 
 #endif /* GIGA_INDEX_H */

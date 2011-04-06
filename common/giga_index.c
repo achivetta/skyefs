@@ -67,26 +67,6 @@ void giga_hash_name(const char* hash_key, char hash_value[])
 #endif
 }
 
-// For a given directory path name, return the zeroth server.
-//
-int giga_create_dir(const char *path_name, int num_servers)
-{
-    int server_id = 0;
-
-    char hash[HASH_LEN] = {0};
-    giga_hash_name(path_name, hash);
-
-    int radix = (int)ceil(log2((double)num_servers));
-    server_id = (compute_index(hash,radix))%num_servers;
-
-#ifdef DBG_INDEXING
-    dbg_msg(log_fp, "[%s] create_dir(%s,%d): radix=%d, zeroSrv=%d",
-            __func__, path_name, num_servers, radix, server_id);
-#endif
-
-    return server_id;
-}
-
 // Initialize the mapping table: 
 // - set the bitmap to all zeros, except for the first location to one which
 //   indicates the presence of a zeroth bucket
@@ -375,6 +355,14 @@ index_t giga_get_index_for_file(struct giga_mapping_t *mapping,
 #endif
    
     return index;
+}
+
+// Given the hash of a file, return the server where the file should be inserted
+// or should be searched.
+//
+index_t giga_get_server_for_file(struct giga_mapping_t *mapping, 
+                                const char *filename){
+    index_t index = giga_get_index_for_file(mapping,filename);
 }
 
 // Check whether an existing file needs to be migrated to the newly split bkt.

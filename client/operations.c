@@ -65,7 +65,7 @@ static int get_server_for_file(PVFS_object_ref *handle, const char *name)
     if (!dir)
         return -EIO;
     
-    int index = giga_get_index_for_file(&dir->mapping, name);
+    int index = giga_get_server_for_file(&dir->mapping, name);
 
     cache_return(dir);
 
