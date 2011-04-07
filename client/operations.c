@@ -72,6 +72,20 @@ static int get_server_for_file(PVFS_object_ref *handle, const char *name)
     return server_id;
 }
 
+//XXX: need a second parameter which is the bitmap returned in the RPC reply
+//
+static void update_client_mapping(PVFS_object_ref *handle)
+{
+    struct skye_directory *dir = cache_fetch(handle);
+    if (!dir)
+        return -EIO;
+
+    //XXX: pass the update bitmap to update cache 
+    //int index = giga_update_cache(&dir->mapping);
+
+    cache_return(dir);
+}
+
 /** Updates parent_ref to point to the specified child */
 static int lookup(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pathname)
 {
@@ -90,7 +104,10 @@ static int lookup(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pat
         return -EIO;
 	}
 
-    if (result.errnum < 0)
+
+    if (result.errnum == -EAGAIN)
+        update_client_mapping(ref); //XXX: need to fix this too
+    else if (result.errnum < 0)
         return result.errnum;
 
     /* Giga+: Add a section here for reading out the bitmap */

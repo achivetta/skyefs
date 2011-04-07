@@ -130,6 +130,23 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         return true;
     }
 
+    //TODO: splitting logic
+    //
+    //(1) check the number of entries in the directory
+    //
+    //(2) if partition doesn't overflow, exit ... else
+    //--- split begins: take appropriate flags
+    //(3) create a new partition (use giga to find the new index)
+    //    --- when you create the new partition check if it created on the
+    //        correct server; if not, delete and re-create repeatedly
+    //(4) readdir() old partition, rename the files that will move
+    //(5) after all entries have been moved, send RPC to server
+    //--- reset all split flags after successful response from servers
+   
+    if (isdir_overflow(&creds, parent) == 1) {
+        // the partition (directory) is overflowing, let's split
+    }
+
     result->errnum = 0;
     result->skye_lookup_u.ref = resp_create.ref;
 
@@ -178,7 +195,8 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 	return true;
 }
 
-int isdir(PVFS_credentials *creds, PVFS_object_ref *handle){
+int isdir(PVFS_credentials *creds, PVFS_object_ref *handle)
+{
     PVFS_sysresp_getattr getattr_response;
     PVFS_sys_attr*	attrs;
 
@@ -197,6 +215,28 @@ int isdir(PVFS_credentials *creds, PVFS_object_ref *handle){
         return 1;
     return 0;
 } 
+
+int isdir_overflow(PVFS_credentials *creds, PVFS_object_ref *handle)
+{
+    int	ret, size;
+
+    PVFS_sysresp_getattr getattr_response;
+    PVFS_sys_attr*	attrs;
+    memset(&getattr_response,0, sizeof(PVFS_sysresp_getattr));
+
+    ret = PVFS_sys_getattr(*handle, PVFS_ATTR_SYS_ALL_NOHINT, creds,
+                           &getattr_response, PVFS_HINT_NULL);
+    if (ret < 0 )
+        return -1;
+
+    attrs = &getattr_response.attr;
+
+    //XXX: fix the size for now
+    if (attrs->dirent_count > SPLIT_THRESHOLD)
+        return 1;
+    return 0;
+} 
+
 
 bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
                             skye_pathname filename, skye_result *result, 
