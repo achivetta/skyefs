@@ -24,7 +24,7 @@
 
 #define ARRAY_LEN(array)(sizeof(array)/sizeof((array)[0])) 
 
-static int hash_compare(char hash_val_1[], char hash_val_2[], int len);
+//static int hash_compare(char hash_val_1[], char hash_val_2[], int len);
 
 static index_t get_child_index(index_t index, int radix);
 static index_t get_parent_index(index_t index);
@@ -363,6 +363,7 @@ index_t giga_get_index_for_file(struct giga_mapping_t *mapping,
 index_t giga_get_server_for_file(struct giga_mapping_t *mapping, 
                                 const char *filename){
     index_t index = giga_get_index_for_file(mapping,filename);
+    return (index % mapping->server_count) + mapping->zeroth_server;
 }
 
 // Check whether an existing file needs to be migrated to the newly split bkt.
@@ -626,7 +627,7 @@ static index_t compute_index(char hash_value[], int radix)
 //  "1" if hash_val_1 is greater
 //  "-1" if hash_val_2 is greater
 //  "0" is both are equal
-//
+/*
 static int hash_compare(char hash_val_1[], char hash_val_2[], int len)
 {
     int status = 0;
@@ -644,6 +645,7 @@ static int hash_compare(char hash_val_1[], char hash_val_2[], int len)
 
     return status;
 }
+*/
 //=================== DEPRECATED =====================
 
 /*
