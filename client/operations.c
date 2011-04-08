@@ -66,60 +66,60 @@ static int get_path_components(const char *path, char *fileName, char *dirName)
 	return 0;
 }
 
-static int get_server_for_file(PVFS_object_ref *handle, const char *name)
+static int get_server_for_file(struct skye_directory *dir, const char *name)
 {
-    struct skye_directory *dir = cache_fetch(handle);
-    if (!dir)
-        return -EIO;
-    
-    int index = giga_get_server_for_file(&dir->mapping, name);
-
-    cache_return(dir);
-
-    return index;
+    return giga_get_server_for_file(&dir->mapping, name);
 }
 
 //XXX: need a second parameter which is the bitmap returned in the RPC reply
 //
-static void update_client_mapping(PVFS_object_ref *handle)
+static void update_client_mapping(struct skye_directory *dir, struct giga_mapping_t *mapping)
 {
-    struct skye_directory *dir = cache_fetch(handle);
-    if (!dir)
-        return -EIO;
-
-    //XXX: pass the update bitmap to update cache 
-    //int index = giga_update_cache(&dir->mapping);
-
-    cache_return(dir);
+    giga_update_cache(&dir->mapping,mapping);
 }
 
 /** Updates parent_ref to point to the specified child */
 static int lookup(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pathname)
 {
+    int ret = 0, server_id;
 	enum clnt_stat retval;
 	skye_lookup result;
-    
+
     if (strlen(pathname) >= MAX_FILENAME_LEN)
         return -ENAMETOOLONG;
+
+    struct skye_directory *dir = cache_fetch(ref);
+    if (!dir)
+        return -EIO;
     
-    int server_id = get_server_for_file(ref, pathname);
+bitmap: 
+    server_id = get_server_for_file(dir, pathname);
     CLIENT *rpc_client = get_connection(server_id);
 
 	retval = skye_rpc_lookup_1(*credentails, *ref, pathname, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC lookup failed");
-        return -EIO;
+        ret = -EIO;
+        goto exit;
 	}
 
 
-    if (result.errnum == -EAGAIN)
-        update_client_mapping(ref); //XXX: need to fix this too
-    else if (result.errnum < 0)
-        return result.errnum;
+    if (result.errnum == -EAGAIN){
+        update_client_mapping(dir, &result.skye_lookup_u.bitmap);
+        goto bitmap;
+    } else if (result.errnum < 0){
+        ret = result.errnum;
+        goto exit;
+    } else {
+        ret = result.errnum;
+    }
 
     /* Giga+: Add a section here for reading out the bitmap */
 
     *ref = result.skye_lookup_u.ref;
+
+ exit:
+    cache_return(dir);
 
     return 0;
 }
@@ -389,7 +389,7 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 
     char filename[MAX_FILENAME_LEN] = {0};
     char pathname[MAX_PATHNAME_LEN] = {0};
-    int ret;
+    int ret = 0, server_id;
 
     if ((ret = get_path_components(path, filename, pathname)) < 0)
         return ret;
@@ -398,33 +398,49 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
         return -ENOMEM;
 
     if ((ret = resolve(&credentials, pathname, ref)) < 0){
-        free(ref);
-        return ret;
+        goto exit2;
     }
 
     enum clnt_stat retval;
     skye_lookup result;
     
-    int server_id = get_server_for_file(ref, path);
+    struct skye_directory *dir = cache_fetch(ref);
+    if (!dir){
+        ret = -EIO;
+        goto exit2;
+    }
+    
+bitmap: 
+    server_id = get_server_for_file(dir, pathname);
     CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_create_1(credentials, *ref, filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC create failed");
-        free(ref);
-        return -EIO;
+        ret = -EIO;
+        goto exit1;
 	}
 
-    if (result.errnum != 0){
-        free(ref);
-        return result.errnum;
+    if (result.errnum == -EAGAIN){
+        update_client_mapping(dir, &result.skye_lookup_u.bitmap);
+        goto bitmap;
+    } else if (result.errnum < 0){
+        ret = result.errnum;
+        goto exit1;
+    } else {
+        ret = result.errnum;
     }
 
-    memcpy(ref, &result.skye_lookup_u.ref, sizeof(PVFS_object_ref));
+    *ref = result.skye_lookup_u.ref;
 
     fi->fh = (intptr_t) ref;
 
-    return 0;
+exit1:
+    cache_return(dir);
+exit2:
+    free(ref);
+
+    return ret;
 }
 
 int skye_mkdir(const char * path, mode_t mode)
@@ -434,27 +450,48 @@ int skye_mkdir(const char * path, mode_t mode)
 
     char filename[MAX_FILENAME_LEN] = {0};
     char pathname[MAX_PATHNAME_LEN] = {0};
-    int ret;
+    int ret = 0, server_id;
 
     if ((ret = get_path_components(path, filename, pathname)) < 0)
         return ret;
 
-    if ((ret = resolve(&credentials, pathname, &ref)) < 0)
+    if ((ret = resolve(&credentials, pathname, &ref)) < 0){
         return ret;
+    }
 
     enum clnt_stat retval;
     skye_result result;
     
-    int server_id = get_server_for_file(&ref, path);
+    struct skye_directory *dir = cache_fetch(&ref);
+    if (!dir){
+        return -EIO;
+    }
+    
+bitmap: 
+    server_id = get_server_for_file(dir, pathname);
     CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_mkdir_1(credentials, ref, filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
-		clnt_perror (rpc_client, "RPC create failed");
-        return -EIO;
+		clnt_perror (rpc_client, "RPC mkdir failed");
+        ret = -EIO;
+        goto exit;
 	}
 
-    return result.errnum;
+    if (result.errnum == -EAGAIN){
+        update_client_mapping(dir, &result.skye_result_u.bitmap);
+        goto bitmap;
+    } else if (result.errnum < 0){
+        ret = result.errnum;
+        goto exit;
+    } else {
+        ret = result.errnum;
+    }
+
+exit:
+    cache_return(dir);
+
+    return ret;
 }
 
 int skye_rename(const char *src_path, const char *dst_path)
@@ -464,7 +501,7 @@ int skye_rename(const char *src_path, const char *dst_path)
     PVFS_object_ref src_ref;
     char src_name[MAX_FILENAME_LEN] = {0};
     char src_dir[MAX_PATHNAME_LEN] = {0};
-    int ret;
+    int ret, server_id;
 
     if ((ret = get_path_components(src_path, src_name, src_dir)) < 0)
         return ret;
@@ -479,22 +516,43 @@ int skye_rename(const char *src_path, const char *dst_path)
         return ret;
     if ((ret = resolve(&credentials, dst_dir, &dst_ref)) < 0)
         return ret;
+    
+    struct skye_directory *dir = cache_fetch(&dst_ref);
+    if (!dir){
+        return -EIO;
+    }
+    
+bitmap: 
+    server_id = get_server_for_file(dir, dst_name);
 
     enum clnt_stat retval;
     skye_result result;
     
-    int server_id = get_server_for_file(&dst_ref, dst_path);
+    server_id = get_server_for_file(dir, dst_path);
     CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_rename_1(credentials, src_name, src_ref, dst_name, dst_ref, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC create failed");
-        return -EIO;
+        ret =  -EIO;
+        goto exit;
 	}
 
-    return result.errnum;
+    if (result.errnum == -EAGAIN){
+        update_client_mapping(dir, &result.skye_result_u.bitmap);
+        goto bitmap;
+    } else if (result.errnum < 0){
+        ret = result.errnum;
+        goto exit;
+    } else {
+        ret = result.errnum;
+    }
+
+exit:
+    return ret;
 }
 
+/* FIXME: in a lot of ways! */
 int skye_remove(const char *path)
 {
     PVFS_object_ref ref;
@@ -511,19 +569,28 @@ int skye_remove(const char *path)
 
     skye_result result;
     enum clnt_stat retval;
+
+    struct skye_directory *dir = cache_fetch(&ref);
+    if (!dir){
+        return -EIO;
+    }
     
-    int server_id = get_server_for_file(&ref, path);
+    int server_id = get_server_for_file(dir, path);
     CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_remove_1(credentials, ref, filename, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC remove failed");
+        cache_return(dir);
         return -EIO;
 	}
 
-    if (result.errnum < 0)
+    if (result.errnum < 0){
+        cache_return(dir);
         return result.errnum;
+    }
 
+    cache_return(dir);
     return 0;
 }
 

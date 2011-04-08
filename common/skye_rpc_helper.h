@@ -11,6 +11,6 @@
 bool_t xdr_PVFS_object_ref(XDR *xdrs, PVFS_object_ref *objp);
 bool_t xdr_PVFS_credentials(XDR *xdrs, PVFS_credentials *objp);
 bool_t xdr_mode_t(XDR *xdrs, mode_t *mode);
-bool_t xdr_giga_mapping(XDR *xdrs, struct giga_mapping_t *objp);
+bool_t xdr_giga_mapping_t(XDR *xdrs, struct giga_mapping_t *objp);
 
 #endif /* GIGA_RPC_HELPER_H */

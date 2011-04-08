@@ -8,6 +8,7 @@
 #ifdef RPC_HDR
 %#include <pvfs2-types.h>
 %#include <sys/types.h>
+%#include "giga_index.h"
 #elif RPC_XDR
 %#include "skye_rpc_helper.h"
 %#pragma GCC diagnostic ignored "-Wunused-variable"
@@ -18,7 +19,7 @@
 
 typedef string skye_pathname<MAX_PATHNAME_LEN>;
 typedef opaque skye_file_data<MAX_SIZE>;
-typedef long skye_bitmap;
+typedef struct giga_mapping_t skye_bitmap;
 
 union skye_result switch (int errnum) {
 	case -EAGAIN:

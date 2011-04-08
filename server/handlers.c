@@ -15,6 +15,76 @@
 #include <pvfs2-util.h>
 #include <pvfs2-sysint.h>
 
+static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const char *name)
+{
+    struct skye_directory *dir = cache_fetch(handle);
+    if (!dir)
+        return -EIO;
+
+    int index = giga_get_index_for_file(&dir->mapping, name);
+
+    cache_return(dir);
+
+    char physical_path[MAX_LEN];
+    snprintf(physical_path, MAX_LEN, "p%05d", index);
+
+    PVFS_sysresp_lookup lk_response;
+    int ret;
+
+    memset(&lk_response, 0, sizeof(lk_response));
+    ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, *handle,
+                              creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
+                              PVFS_HINT_NULL);
+    if ( ret < 0 )
+        return -1 * PVFS_get_errno_mapping(ret);
+
+    *handle = lk_response.ref;
+
+    return 0;
+}
+
+static int isdir(PVFS_credentials *creds, PVFS_object_ref *handle)
+{
+    PVFS_sysresp_getattr getattr_response;
+    PVFS_sys_attr*	attrs;
+
+    int			ret;
+
+    memset(&getattr_response,0, sizeof(PVFS_sysresp_getattr));
+
+    ret = PVFS_sys_getattr(*handle, PVFS_ATTR_SYS_ALL_NOHINT, creds,
+                           &getattr_response, PVFS_HINT_NULL);
+    if ( ret < 0 )
+        return 0;
+
+    attrs = &getattr_response.attr;
+
+    if (attrs->objtype == PVFS_TYPE_DIRECTORY)
+        return 1;
+    return 0;
+} 
+
+static int isdir_overflow(PVFS_credentials *creds, PVFS_object_ref *handle)
+{
+    int	ret;
+
+    PVFS_sysresp_getattr getattr_response;
+    PVFS_sys_attr*	attrs;
+    memset(&getattr_response,0, sizeof(PVFS_sysresp_getattr));
+
+    ret = PVFS_sys_getattr(*handle, PVFS_ATTR_SYS_ALL_NOHINT, creds,
+                           &getattr_response, PVFS_HINT_NULL);
+    if (ret < 0 )
+        return -1;
+
+    attrs = &getattr_response.attr;
+
+    //XXX: fix the size for now
+    if (attrs->dirent_count > SPLIT_THRESHOLD)
+        return 1;
+    return 0;
+} 
+
 bool_t skye_rpc_init_1_svc(bool_t *result, struct svc_req *rqstp)
 {
     (void)rqstp;
@@ -62,34 +132,6 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     result->errnum = 0;
 
     return true;;
-}
-
-static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const char *name)
-{
-    struct skye_directory *dir = cache_fetch(handle);
-    if (!dir)
-        return -EIO;
-
-    int index = giga_get_index_for_file(&dir->mapping, name);
-
-    cache_return(dir);
-
-    char physical_path[MAX_LEN];
-    snprintf(physical_path, MAX_LEN, "p%05d", index);
-
-    PVFS_sysresp_lookup lk_response;
-    int ret;
-
-    memset(&lk_response, 0, sizeof(lk_response));
-    ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, *handle,
-                              creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
-                              PVFS_HINT_NULL);
-    if ( ret < 0 )
-        return -1 * PVFS_get_errno_mapping(ret);
-
-    *handle = lk_response.ref;
-
-    return 0;
 }
 
 bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
@@ -140,7 +182,7 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     //(5) after all entries have been moved, send RPC to server
     //--- reset all split flags after successful response from servers
    
-    if (isdir_overflow(&creds, parent) == 1) {
+    if (isdir_overflow(&creds, &parent) == 1) {
         // the partition (directory) is overflowing, let's split
     }
 
@@ -191,48 +233,6 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
 	return true;
 }
-
-int isdir(PVFS_credentials *creds, PVFS_object_ref *handle)
-{
-    PVFS_sysresp_getattr getattr_response;
-    PVFS_sys_attr*	attrs;
-
-    int			ret;
-
-    memset(&getattr_response,0, sizeof(PVFS_sysresp_getattr));
-
-    ret = PVFS_sys_getattr(*handle, PVFS_ATTR_SYS_ALL_NOHINT, creds,
-                           &getattr_response, PVFS_HINT_NULL);
-    if ( ret < 0 )
-        return 0;
-
-    attrs = &getattr_response.attr;
-
-    if (attrs->objtype == PVFS_TYPE_DIRECTORY)
-        return 1;
-    return 0;
-} 
-
-int isdir_overflow(PVFS_credentials *creds, PVFS_object_ref *handle)
-{
-    int	ret, size;
-
-    PVFS_sysresp_getattr getattr_response;
-    PVFS_sys_attr*	attrs;
-    memset(&getattr_response,0, sizeof(PVFS_sysresp_getattr));
-
-    ret = PVFS_sys_getattr(*handle, PVFS_ATTR_SYS_ALL_NOHINT, creds,
-                           &getattr_response, PVFS_HINT_NULL);
-    if (ret < 0 )
-        return -1;
-
-    attrs = &getattr_response.attr;
-
-    //XXX: fix the size for now
-    if (attrs->dirent_count > SPLIT_THRESHOLD)
-        return 1;
-    return 0;
-} 
 
 
 bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
