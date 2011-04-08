@@ -1,6 +1,7 @@
 #include "common/trace.h"
 #include "common/skye_rpc.h"
 #include "common/defaults.h"
+#include "common/connection.h"
 #include "server.h"
 #include "cache.h"
 
@@ -49,7 +50,7 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     int ret;
 
     memset(&lk_response, 0, sizeof(lk_response));
-    ret = PVFS_sys_ref_lookup(srv_settings.fs_id, physical_path, parent,
+    ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, parent,
                               &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
     if ( ret < 0 ) {
@@ -80,7 +81,7 @@ static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const 
     int ret;
 
     memset(&lk_response, 0, sizeof(lk_response));
-    ret = PVFS_sys_ref_lookup(srv_settings.fs_id, physical_path, *handle,
+    ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, *handle,
                               creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
     if ( ret < 0 )
@@ -209,7 +210,7 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     PVFS_sysresp_lookup lk_response;
 
     memset(&lk_response, 0, sizeof(lk_response));
-    rc = PVFS_sys_ref_lookup(srv_settings.fs_id, filename, parent, &creds,
+    rc = PVFS_sys_ref_lookup(pvfs_fsid, filename, parent, &creds,
                               &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
     if ( rc < 0 )

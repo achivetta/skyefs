@@ -2,6 +2,8 @@
 #include "common/trace.h"
 #include "common/defaults.h"
 #include "common/skye_rpc.h"
+#include "common/connection.h"
+#include "common/options.h"
 
 #include <arpa/inet.h>
 #include <assert.h>
@@ -28,6 +30,9 @@
 #include <pvfs2-debug.h>
 
 struct server_settings srv_settings;
+struct skye_options skye_options;
+
+static pthread_t listen_tid;
 
 // FIXME: rpcgen should put this in giga_rpc.h, but it doesn't. Why?
 extern void skye_rpc_prog_1(struct svc_req *rqstp, register SVCXPRT *transp);
@@ -38,7 +43,7 @@ static void * handler_thread(void *arg);
 // Methods to setup server's socket connections
 static void server_socket();
 static void setup_listener(int listen_fd);
-static void main_select_loop(const int listen_fd);
+static void * main_select_loop(void * listen_fd);
 
 static void sig_handler(const int sig)
 {
@@ -92,9 +97,10 @@ leave:
     return 0;
 }
 
-static void main_select_loop(const int listen_fd)
+static void * main_select_loop(void * listen_fd_arg)
 {
     int conn_fd;
+    long listen_fd = (long) listen_fd_arg;
     
     dbg_msg(log_fp, "[%s] Starting select().", __func__);
     
@@ -132,6 +138,8 @@ static void main_select_loop(const int listen_fd)
     }
     
     dbg_msg(log_fp, "[%s] WARNING: Exiting select(). WHY??? HOW???", __func__);
+
+    return NULL;
 }
 
 static void setup_listener(int listen_fd)
@@ -155,6 +163,8 @@ static void setup_listener(int listen_fd)
         close(listen_fd);
         err_sys("ERROR: while listen()ing.");
     }
+
+    pthread_create(&listen_tid, NULL, main_select_loop, (void*)(long)listen_fd);
     
     dbg_msg(log_fp, "[%s] Listener setup (on port %d of %s). Success.",
             __func__, ntohs(serv_addr.sin_port), inet_ntoa(serv_addr.sin_addr));
@@ -188,131 +198,18 @@ static void set_sockopt_server(int sock_fd)
                    (void *)&flags, sizeof(flags)) < 0) {
         err_ret("ERROR: setsockopt(SO_KEEPALIVE).");
     }
+    /* FIXME
     if (setsockopt(sock_fd, SOL_SOCKET, SO_LINGER, 
                    (void *)&flags, sizeof(flags)) < 0) {
         err_ret("ERROR: setsockopt(SO_LINGER).");
     }
+    */
     if (setsockopt(sock_fd, IPPROTO_TCP, TCP_NODELAY, 
                    (void *)&flags, sizeof(flags)) < 0) {
         err_ret("ERROR: setsockopt(TCP_NODELAY).");
     }
 
     return;
-}
-
-/* from pvfs2fuse.c:main */
-static int pvfs_connection(char *fs_spec){
-    int ret = 0;
-    struct PVFS_sys_mntent *me = &srv_settings.mntent;
-    char *cp;
-    int cur_server;
-
-    /* the following is copied from PVFS_util_init_defaults()
-       in fuse/lib/pvfs2-util.c */
-
-    /* initialize pvfs system interface */
-    ret = PVFS_sys_initialize(GOSSIP_NO_DEBUG);
-    if (ret < 0)
-    {
-        return(ret);
-    }
-
-    /* the following is copied from PVFS_util_parse_pvfstab()
-       in fuse/lib/pvfs2-util.c */
-    memset( me, 0, sizeof(srv_settings.mntent) );
-
-    /* Enable integrity checks by default */
-    me->integrity_check = 1;
-    /* comma-separated list of ways to contact a config server */
-    me->num_pvfs_config_servers = 1;
-
-    for (cp=fs_spec; *cp; cp++)
-        if (*cp == ',')
-            ++me->num_pvfs_config_servers;
-
-    /* allocate room for our copies of the strings */
-    me->pvfs_config_servers =
-        malloc(me->num_pvfs_config_servers *
-               sizeof(*me->pvfs_config_servers));
-    if (!me->pvfs_config_servers)
-        exit(-1);
-    memset(me->pvfs_config_servers, 0,
-           me->num_pvfs_config_servers * sizeof(*me->pvfs_config_servers));
-
-    me->mnt_dir = NULL;
-    me->mnt_opts = NULL;
-
-    cp = fs_spec;
-    cur_server = 0;
-    for (;;) {
-        char *tok;
-        int slashcount;
-        char *slash;
-        char *last_slash;
-
-        tok = strsep(&cp, ",");
-        if (!tok) break;
-
-        slash = tok;
-        slashcount = 0;
-        while ((slash = index(slash, '/')))
-        {
-            slash++;
-            slashcount++;
-        }
-        if (slashcount != 3)
-        {
-            fprintf(stderr,"Error: invalid FS spec: %s\n",
-                    fs_spec);
-            exit(-1);
-        }
-
-        /* find a reference point in the string */
-        last_slash = rindex(tok, '/');
-        *last_slash = '\0';
-
-        /* config server and fs name are a special case, take one 
-         * string and split it in half on "/" delimiter
-         */
-        me->pvfs_config_servers[cur_server] = strdup(tok);
-        if (!me->pvfs_config_servers[cur_server])
-            exit(-1);
-
-        ++last_slash;
-
-        if (cur_server == 0) {
-            me->pvfs_fs_name = strdup(last_slash);
-            if (!me->pvfs_fs_name)
-                exit(-1);
-        } else {
-            if (strcmp(last_slash, me->pvfs_fs_name) != 0) {
-                fprintf(stderr,
-                        "Error: different fs names in server addresses: %s\n",
-                        fs_spec);
-                exit(-1);
-            }
-        }
-        ++cur_server;
-    }
-
-    /* FIXME flowproto should be an option */
-    me->flowproto = FLOWPROTO_DEFAULT;
-
-    /* FIXME encoding should be an option */
-    me->encoding = ENCODING_DEFAULT;
-
-    /* FIXME default_num_dfiles should be an option */
-
-    ret = PVFS_sys_fs_add(me);
-    if( ret < 0 )
-    {
-        PVFS_perror("Could not add mnt entry", ret);
-        return(-1);
-    }
-    srv_settings.fs_id = me->fs_id;
-
-    return ret;
-
 }
 
 static void server_socket()
@@ -323,8 +220,6 @@ static void server_socket()
 
     set_sockopt_server(listen_fd);
     setup_listener(listen_fd);
-
-    main_select_loop(listen_fd);
 }
 
 int main(int argc, char **argv)
@@ -367,9 +262,19 @@ int main(int argc, char **argv)
     // handling SIGINT
     signal(SIGINT, sig_handler);
 
-    pvfs_connection(fs_spec);
+    pvfs_connect(fs_spec);
 
     server_socket(); 
 
-    exit(1);
+    /* FIXME: we sleep 5 seconds here to let the other servers startup.  This
+     * mechanism needs to be replaced by an intelligent reconnection system.
+     */
+    sleep(5);
+    rpc_connect();
+
+    void *retval;
+
+    pthread_join(listen_tid, &retval);
+
+    exit((long)retval);
 }

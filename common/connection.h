@@ -3,12 +3,13 @@
 
 #define pvfs2errno(n) ((-1)*(PVFS_get_errno_mapping(n)))
 
+extern PVFS_fs_id pvfs_fsid;
+
 CLIENT *get_connection(int serverid);
 
-int rpc_connect();
-void rpc_disconnect();
+int rpc_connect(void);
+void rpc_disconnect(void);
 
-int pvfs_connect();
-void gen_credentials(PVFS_credentials *credentials);
+int pvfs_connect(char *);
 
 #endif

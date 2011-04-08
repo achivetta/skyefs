@@ -1,9 +1,8 @@
-#include "common/defaults.h"
-#include "common/skye_rpc.h"
-#include "client.h"
-#include "operations.h"
+#include "defaults.h"
+#include "options.h"
+#include "skye_rpc.h"
 #include "connection.h"
-#include "common/trace.h"
+#include "trace.h"
 
 #include <pvfs2-mgmt.h>
 #include <rpc/rpc.h>
@@ -12,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <fuse/fuse.h>
 
 static CLIENT **rpc_clients;
 struct PVFS_sys_mntent pvfs_mntent;
@@ -19,7 +19,7 @@ PVFS_fs_id pvfs_fsid;
 
 static int pvfs_generate_serverlist(){
     int ret, servercount, i;
-    PVFS_credentials credentials; gen_credentials(&credentials);
+    PVFS_credentials credentials; PVFS_util_gen_credentials(&credentials);
 
     ret = PVFS_mgmt_count_servers(pvfs_fsid,&credentials,PVFS_MGMT_META_SERVER,&servercount);
     if (ret < 0) return ret;
@@ -47,15 +47,15 @@ static int pvfs_generate_serverlist(){
         if (!servers[i]) return -ENOMEM; 
     }
 
-    client_options.serverlist = servers;
-    client_options.servercount = servercount;
+    skye_options.serverlist = servers;
+    skye_options.servercount = servercount;
 
     return 0;
 }
 
 CLIENT *get_connection(int serverid)
 {
-    assert(serverid >= 0 && serverid < client_options.servercount);
+    assert(serverid >= 0 && serverid < skye_options.servercount);
 
     return rpc_clients[serverid];
 }
@@ -76,6 +76,7 @@ static int rpc_host_connect(CLIENT **rpc_client, const char *host)
     }
     memcpy(&addr.sin_addr, he->h_addr_list[0], he->h_length);
 
+    dbg_msg(stderr, "[%s] connecting to server %s\n", __func__ , host);
     *rpc_client = clnttcp_create (&addr, SKYE_RPC_PROG, SKYE_RPC_VERSION, &sock, 0, 0);
     if (*rpc_client == NULL) {
         clnt_pcreateerror (NULL);
@@ -85,16 +86,16 @@ static int rpc_host_connect(CLIENT **rpc_client, const char *host)
     return 0;
 }
 
-int rpc_connect()
+int rpc_connect(void)
 {
     int i;
 
-    rpc_clients = malloc(sizeof(CLIENT *)*client_options.servercount);
+    rpc_clients = malloc(sizeof(CLIENT *)*skye_options.servercount);
     if (!rpc_clients)
         return -ENOMEM;
 
-    for (i = 0; i < client_options.servercount; i++){
-        int ret = rpc_host_connect(rpc_clients + i, client_options.serverlist[i]);
+    for (i = 0; i < skye_options.servercount; i++){
+        int ret = rpc_host_connect(rpc_clients + i, skye_options.serverlist[i]);
         if (ret < 0)
             return ret;
     }
@@ -102,16 +103,16 @@ int rpc_connect()
     return 0;
 }
 
-void rpc_disconnect()
+void rpc_disconnect(void)
 {
     int i;
 
-    for (i = 0; i < client_options.servercount; i++){
+    for (i = 0; i < skye_options.servercount; i++){
         clnt_destroy (rpc_clients[i]);
     }
 }
 
-int pvfs_connect()
+int pvfs_connect(char *fs_spec)
 {
     int ret = 0;
     struct PVFS_sys_mntent *me = &pvfs_mntent;
@@ -137,7 +138,7 @@ int pvfs_connect()
     /* comma-separated list of ways to contact a config server */
     me->num_pvfs_config_servers = 1;
 
-    for (cp=client_options.pvfs_spec; *cp; cp++)
+    for (cp=fs_spec; *cp; cp++)
         if (*cp == ',')
             ++me->num_pvfs_config_servers;
 
@@ -153,7 +154,7 @@ int pvfs_connect()
     me->mnt_dir = NULL;
     me->mnt_opts = NULL;
 
-    cp = client_options.pvfs_spec;
+    cp = fs_spec;
     cur_server = 0;
     for (;;) {
         char *tok;
@@ -174,7 +175,7 @@ int pvfs_connect()
         if (slashcount != 3)
         {
             fprintf(stderr,"Error: invalid FS spec: %s\n",
-                    client_options.pvfs_spec);
+                    fs_spec);
             exit(-1);
         }
 
@@ -199,7 +200,7 @@ int pvfs_connect()
             if (strcmp(last_slash, me->pvfs_fs_name) != 0) {
                 fprintf(stderr,
                         "Error: different fs names in server addresses: %s\n",
-                        client_options.pvfs_spec);
+                        fs_spec);
                 exit(-1);
             }
         }
@@ -227,10 +228,3 @@ int pvfs_connect()
     return ret;
 }
 
-/* DANGER: depends on internals of PVFS struct
- * FIXME should this use PVFS_util_gen_credentials()? */
-void gen_credentials(PVFS_credentials *credentials)
-{
-    credentials->uid = fuse_get_context()->uid;
-    credentials->gid = fuse_get_context()->gid;
-}

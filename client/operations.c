@@ -1,6 +1,6 @@
 #include "common/skye_rpc.h"
 #include "common/defaults.h"
-#include "connection.h"
+#include "common/connection.h"
 #include "common/trace.h"
 #include "cache.h"
 #include "client.h"
@@ -9,6 +9,7 @@
 #include <fuse.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <pvfs2-util.h>
 
 /* FIXME: see pvfs:src/apps/admin/pvfs2-cp.c for how to do permissions correctly
  */
@@ -16,6 +17,14 @@
 /* TODO: should the structure we are storing in the fuse_file_info->fh also have
  * credentials? */
 
+/* DANGER: depends on internals of PVFS struct
+ * FIXME should this use PVFS_util_gen_credentials()? */
+static void gen_credentials(PVFS_credentials *credentials)
+
+{
+    credentials->uid = fuse_get_context()->uid;
+    credentials->gid = fuse_get_context()->gid;
+}
 static int get_path_components(const char *path, char *fileName, char *dirName)
 {
 	const char *p = path;
@@ -59,8 +68,6 @@ static int get_path_components(const char *path, char *fileName, char *dirName)
 
 static int get_server_for_file(PVFS_object_ref *handle, const char *name)
 {
-    int server_id = 0;
-    
     struct skye_directory *dir = cache_fetch(handle);
     if (!dir)
         return -EIO;
@@ -69,7 +76,7 @@ static int get_server_for_file(PVFS_object_ref *handle, const char *name)
 
     cache_return(dir);
 
-    return server_id;
+    return index;
 }
 
 /** Updates parent_ref to point to the specified child */

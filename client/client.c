@@ -1,9 +1,10 @@
 #include "common/defaults.h"
 #include "common/skye_rpc.h"
 #include "common/trace.h"
+#include "common/connection.h"
+#include "common/options.h"
 #include "client.h"
 #include "operations.h"
-#include "connection.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -20,13 +21,13 @@
 #include <unistd.h>
 #include <sys/types.h>
 
-struct client_options client_options;
+struct skye_options skye_options;
 
 static void* skye_init(struct fuse_conn_info *conn);
 static void skye_destroy(void *);
 
 /** macro to define options */
-#define SKYE_OPT_KEY(t, p, v) { t, offsetof(struct client_options, p), v }
+#define SKYE_OPT_KEY(t, p, v) { t, offsetof(struct skye_options, p), v }
 
 static struct fuse_opt skye_opts[] = {
     SKYE_OPT_KEY("pvfs=%s", pvfs_spec, 0),
@@ -60,9 +61,9 @@ int main(int argc, char *argv[])
     struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
     /* clear structure that holds our options */
-    memset(&client_options, 0, sizeof(struct client_options));
+    memset(&skye_options, 0, sizeof(struct skye_options));
 
-    if (fuse_opt_parse(&args, &client_options, skye_opts, NULL) == -1)
+    if (fuse_opt_parse(&args, &skye_options, skye_opts, NULL) == -1)
         /** error parsing options */
         return -1;
 
@@ -84,7 +85,7 @@ static void* skye_init(struct fuse_conn_info *conn)
 {
     int ret;
     (void)conn;
-    if ((ret = pvfs_connect()) < 0){
+    if ((ret = pvfs_connect(skye_options.pvfs_spec)) < 0){
         err_quit("Unable to connect to PVFS (%d). Quitting.\n", ret);
     }
     if ((ret = rpc_connect()) < 0){
