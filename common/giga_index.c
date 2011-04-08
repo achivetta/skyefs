@@ -87,6 +87,8 @@ void giga_init_mapping(struct giga_mapping_t *mapping, int flag)
     if (flag == -1) {
         mapping->bitmap[0] = 1;
         mapping->curr_radix = 1;
+        mapping->zeroth_server = 0;
+        mapping->server_count = 1;
         return;
     }
     
