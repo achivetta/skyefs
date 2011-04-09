@@ -10,6 +10,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <pvfs2-util.h>
+#include <assert.h>
 
 /* FIXME: see pvfs:src/apps/admin/pvfs2-cp.c for how to do permissions correctly
  */
@@ -103,7 +104,6 @@ bitmap:
         goto exit;
 	}
 
-
     if (result.errnum == -EAGAIN){
         update_client_mapping(dir, &result.skye_lookup_u.bitmap);
         goto bitmap;
@@ -111,17 +111,17 @@ bitmap:
         ret = result.errnum;
         goto exit;
     } else {
-        ret = result.errnum;
+        ret = 0;
     }
 
     /* Giga+: Add a section here for reading out the bitmap */
 
-    *ref = result.skye_lookup_u.ref;
+    memcpy(ref, &result.skye_lookup_u.ref, sizeof(PVFS_object_ref));
 
  exit:
     cache_return(dir);
 
-    return 0;
+    return ret;
 }
 
 static int resolve(PVFS_credentials *credentials, const char* pathname, PVFS_object_ref* ref)
@@ -151,6 +151,7 @@ static int resolve(PVFS_credentials *credentials, const char* pathname, PVFS_obj
 
         component = strtok_r(NULL, "/", &saveptr);
     }
+
 
     return 0;
 }
@@ -431,13 +432,18 @@ bitmap:
         ret = result.errnum;
     }
 
-    *ref = result.skye_lookup_u.ref;
+    memcpy(ref, &result.skye_lookup_u.ref, sizeof(PVFS_object_ref));
 
     fi->fh = (intptr_t) ref;
 
 exit1:
     cache_return(dir);
+
+    return ret;
+
 exit2:
+    cache_return(dir);
+
     free(ref);
 
     return ret;
@@ -692,11 +698,12 @@ int skye_open(const char *path, struct fuse_file_info *fi)
     if ((ref = malloc(sizeof(PVFS_object_ref))) == NULL)
         return -ENOMEM;
 
+    bzero(ref,sizeof(PVFS_object_ref));
+
     if ((ret = resolve(&credentials, path, ref)) < 0){
         free(ref);
         return ret;
     }
-
     fi->fh = (intptr_t) ref;
 
     return 0;
@@ -731,6 +738,8 @@ int skye_write(const char* path, const char *buf, size_t size, off_t offset,
               struct fuse_file_info *fi)
 {
     (void)path;
+    assert(fi);
+    assert(fi->fh);
 
     PVFS_object_ref *ref = (PVFS_object_ref*)fi->fh;
     PVFS_credentials credentials; gen_credentials(&credentials);

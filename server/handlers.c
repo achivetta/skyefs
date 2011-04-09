@@ -253,8 +253,10 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     rc = PVFS_sys_ref_lookup(pvfs_fsid, filename, parent, &creds,
                               &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
-    if ( rc < 0 )
-        return -1 * PVFS_get_errno_mapping(rc);
+    if ( rc < 0 ){
+        result->errnum =  -1 * PVFS_get_errno_mapping(rc);
+        return true;
+    }
 
     if (isdir(&creds, &(lk_response.ref))){
         rc = PVFS_sys_remove("p00000", lk_response.ref, &creds, PVFS_HINT_NULL);
