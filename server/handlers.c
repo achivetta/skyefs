@@ -1,6 +1,7 @@
+#include "common/defaults.h"
 #include "common/trace.h"
 #include "common/skye_rpc.h"
-#include "common/defaults.h"
+#include "common/options.h"
 #include "common/connection.h"
 #include "server.h"
 #include "cache.h"
@@ -14,6 +15,7 @@
 
 #include <pvfs2-util.h>
 #include <pvfs2-sysint.h>
+#include <pvfs2-mgmt.h>
 
 static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const char *name)
 {
@@ -192,6 +194,54 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     return true;
 }
 
+static int pvfs_get_mds(PVFS_object_ref *ref){
+    PVFS_error rc;
+    PVFS_BMI_addr_t addr;
+    int i;
+
+    rc = PVFS_mgmt_map_handle(ref->fs_id, ref->handle, &addr);
+    if (rc)
+        return rc;
+
+    for (i = 0; i < skye_options.servercount; i++){
+        if (memcmp(&addr, skye_options.serveraddrs+i, sizeof(PVFS_BMI_addr_t)) == 0)
+            break;
+    }
+
+    assert(i != skye_options.servercount);
+    return i;
+}
+
+static int pvfs_mkdir_server(PVFS_credentials *creds, PVFS_object_ref *parent, 
+                        char *dirname, PVFS_sys_attr *attr, int server)
+{
+    (void)server;
+    PVFS_sysresp_mkdir resp_mkdir;
+
+    int created_on = -1;
+    PVFS_error rc = 0;
+    
+    while (1){
+        printf("attempting mkdir(%lu,%s) on %d\n", parent->handle, dirname, server);
+        rc = PVFS_sys_mkdir(dirname, *parent, *attr, creds, &resp_mkdir,
+                            PVFS_HINT_NULL);
+        if (rc != 0)
+            return -1 * PVFS_get_errno_mapping(rc);
+
+        created_on = pvfs_get_mds(&resp_mkdir.ref);
+
+        if (created_on == server)
+            break;
+
+        printf("\tbut got created on %d\n", created_on);
+        
+        rc = PVFS_sys_remove(dirname, *parent, creds, PVFS_HINT_NULL);
+        if (rc != 0)
+            return -1 * PVFS_get_errno_mapping(rc);
+    }
+    return 0;
+}
+
 bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
                             skye_pathname dirname, mode_t mode, 
                             skye_result *result, struct svc_req *rqstp)
@@ -204,7 +254,6 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         return true;
     }
 
-    PVFS_sysresp_mkdir resp_mkdir;
 
     /* Set attributes */
     PVFS_sys_attr attr;
@@ -214,22 +263,26 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     attr.perms = mode;
     attr.mask = PVFS_ATTR_SYS_ALL_SETABLE;
 
+    PVFS_sysresp_mkdir resp_mkdir;
     rc = PVFS_sys_mkdir(dirname, parent, attr, &creds, &resp_mkdir,
                             PVFS_HINT_NULL);
-    if (rc != 0)
+
+    if (rc != 0){
         result->errnum = -1 * PVFS_get_errno_mapping(rc);
-    else
-        result->errnum = 0;
+        return true;
+    }
 
     /* FIXME: handle cleanup in the case that this fails */
+
     parent = resp_mkdir.ref;
+
+    int server = pvfs_get_mds(&parent);
+
+    printf("%s was created on server %d, trying to create first partition on that server.\n",dirname, server);
+
     dirname = "p00000";
-    rc = PVFS_sys_mkdir(dirname, parent, attr, &creds, &resp_mkdir,
-                            PVFS_HINT_NULL);
-    if (rc != 0)
-        result->errnum = -1 * PVFS_get_errno_mapping(rc);
-    else
-        result->errnum = 0;
+    rc = pvfs_mkdir_server(&creds, &parent, dirname, &attr, server);
+    result->errnum = rc;
 
 	return true;
 }

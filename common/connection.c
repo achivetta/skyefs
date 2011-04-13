@@ -24,17 +24,17 @@ static int pvfs_generate_serverlist(){
     ret = PVFS_mgmt_count_servers(pvfs_fsid,&credentials,PVFS_MGMT_META_SERVER,&servercount);
     if (ret < 0) return ret;
 
-    PVFS_BMI_addr_t *addr_array = malloc(sizeof(PVFS_BMI_addr_t)*(servercount));
-    if (!addr_array) return -ENOMEM;
+    skye_options.serveraddrs = malloc(sizeof(PVFS_BMI_addr_t)*(servercount));
+    if (!skye_options.serveraddrs) return -ENOMEM;
 
-    ret = PVFS_mgmt_get_server_array(pvfs_fsid,&credentials,PVFS_MGMT_META_SERVER, addr_array, &servercount);
+    ret = PVFS_mgmt_get_server_array(pvfs_fsid,&credentials,PVFS_MGMT_META_SERVER, skye_options.serveraddrs, &servercount);
     if (ret < 0) return ret;
 
     const char **servers = malloc(sizeof(char*)*(servercount));
     if (!servers) return -ENOMEM;
 
     for (i = 0; i < servercount; i++){
-        servers[i] = PVFS_mgmt_map_addr(pvfs_fsid,&credentials,addr_array[i],NULL);    
+        servers[i] = PVFS_mgmt_map_addr(pvfs_fsid,&credentials,skye_options.serveraddrs[i],NULL);    
 
         char *start, *end;
 
