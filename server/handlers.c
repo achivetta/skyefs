@@ -222,7 +222,6 @@ static int pvfs_mkdir_server(PVFS_credentials *creds, PVFS_object_ref *parent,
     PVFS_error rc = 0;
     
     while (1){
-        printf("attempting mkdir(%lu,%s) on %d\n", parent->handle, dirname, server);
         rc = PVFS_sys_mkdir(dirname, *parent, *attr, creds, &resp_mkdir,
                             PVFS_HINT_NULL);
         if (rc != 0)
@@ -233,8 +232,6 @@ static int pvfs_mkdir_server(PVFS_credentials *creds, PVFS_object_ref *parent,
         if (created_on == server)
             break;
 
-        printf("\tbut got created on %d\n", created_on);
-        
         rc = PVFS_sys_remove(dirname, *parent, creds, PVFS_HINT_NULL);
         if (rc != 0)
             return -1 * PVFS_get_errno_mapping(rc);
@@ -277,8 +274,6 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     parent = resp_mkdir.ref;
 
     int server = pvfs_get_mds(&parent);
-
-    printf("%s was created on server %d, trying to create first partition on that server.\n",dirname, server);
 
     dirname = "p00000";
     rc = pvfs_mkdir_server(&creds, &parent, dirname, &attr, server);
