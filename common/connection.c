@@ -211,7 +211,7 @@ int pvfs_connect(char *fs_spec)
     me->flowproto = FLOWPROTO_DEFAULT;
 
     /* FIXME encoding should be an option */
-    me->encoding = ENCODING_DEFAULT;
+    me->encoding = PVFS2_ENCODING_DEFAULT;
 
     /* FIXME default_num_dfiles should be an option */
 
