@@ -41,7 +41,10 @@ union skye_lookup switch (int errnum) {
 
 program SKYE_RPC_PROG {                 /* program number */
 	version SKYE_RPC_VERSION {          /* version number */
+		/* currently unused */
 		bool SKYE_RPC_INIT(void) = 1;
+
+		/* CLIENT API */
 		skye_lookup SKYE_RPC_LOOKUP(PVFS_credentials, PVFS_object_ref, skye_pathname) = 2;
 		
 		skye_lookup SKYE_RPC_CREATE(PVFS_credentials, PVFS_object_ref, skye_pathname,
@@ -52,5 +55,9 @@ program SKYE_RPC_PROG {                 /* program number */
 				skye_pathname, PVFS_object_ref) = 103;
 		skye_result SKYE_RPC_REMOVE(PVFS_credentials, PVFS_object_ref,
 				skye_pathname) = 104; 
+
+		/* SERVER 2 SERVER API */
+		int SKYE_RPC_BUCKET_ADD(PVFS_object_ref, int) = 201;
+		int SKYE_RPC_BUCKET_REMOVE(PVFS_object_ref, int) = 202;
 	} = 1;
 } = 522222; /* FIXME: Is this a okay value for program number? */
