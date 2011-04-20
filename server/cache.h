@@ -20,7 +20,7 @@ struct skye_directory {
 };
 
 /* initialize the directory cache */
-int cache_init();
+int cache_init(void);
 
 /* get the skye_directory object for a given PVFS_object_ref. */
 struct skye_directory* cache_fetch(PVFS_object_ref *handle);

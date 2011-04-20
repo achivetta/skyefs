@@ -228,3 +228,21 @@ int pvfs_connect(char *fs_spec)
     return ret;
 }
 
+int pvfs_get_mds(PVFS_object_ref *ref){
+    PVFS_error rc;
+    PVFS_BMI_addr_t addr;
+    int i;
+
+    rc = PVFS_mgmt_map_handle(ref->fs_id, ref->handle, &addr);
+    if (rc)
+        return rc;
+
+    for (i = 0; i < skye_options.servercount; i++){
+        if (memcmp(&addr, skye_options.serveraddrs+i, sizeof(PVFS_BMI_addr_t)) == 0)
+            break;
+    }
+
+    assert(i != skye_options.servercount);
+    return i;
+}
+

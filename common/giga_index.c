@@ -73,7 +73,8 @@ void giga_hash_name(const char* hash_key, char hash_value[])
 // - set the radix to 1 (XXX: do we need radix??)
 // - flag indicates the number of servers if you use static partitioning
 //
-void giga_init_mapping(struct giga_mapping_t *mapping, int flag)
+void giga_init_mapping(struct giga_mapping_t *mapping, int flag, 
+                       unsigned int zeroth_server, unsigned int server_count)
 {
     int i;
 #ifdef DBG_INDEXING
@@ -83,13 +84,16 @@ void giga_init_mapping(struct giga_mapping_t *mapping, int flag)
     assert(mapping != NULL);
 
     memset(mapping->bitmap, 0, MAX_BMAP_LEN);
+
+    mapping->zeroth_server = zeroth_server;
+    if (server_count > 0)
+        mapping->server_count = server_count;
+    else
+        mapping->server_count = 1;
     
     if (flag == -1) {
         mapping->bitmap[0] = 1;
         mapping->curr_radix = 1;
-        // FIXME: how to select zeroth_server?
-        mapping->zeroth_server = 0;
-        mapping->server_count = 1;
         return;
     }
     
@@ -137,7 +141,9 @@ void giga_init_mapping(struct giga_mapping_t *mapping, int flag)
 // Initialize the mapping table to an existing bitmap
 //
 void giga_init_mapping_from_bitmap(struct giga_mapping_t *mapping,
-                                   bitmap_t bitmap[], int bitmap_len) 
+                                   bitmap_t bitmap[], int bitmap_len,
+                                   unsigned int zeroth_server, 
+                                   unsigned int server_count)
 {
     int i;
 #ifdef DBG_INDEXING
@@ -145,7 +151,7 @@ void giga_init_mapping_from_bitmap(struct giga_mapping_t *mapping,
 #endif
 
     assert(mapping != NULL);
-    giga_init_mapping(mapping, -1);
+    giga_init_mapping(mapping, -1, zeroth_server, server_count);
 
     int bigger_bmap = ((MAX_BMAP_LEN > bitmap_len) ? bitmap_len : MAX_BMAP_LEN);
     for (i=0; i<bigger_bmap; i++) {
@@ -169,7 +175,7 @@ void giga_copy_mapping(struct giga_mapping_t *dest, struct giga_mapping_t *src, 
 #endif
     
     if (z == 0) {
-        giga_init_mapping(dest, -1);
+        giga_init_mapping(dest, -1, src->zeroth_server, src->server_count);
     } 
     else {
         assert(src != NULL);
@@ -212,6 +218,9 @@ void giga_update_cache(struct giga_mapping_t *curr, struct giga_mapping_t *updat
         curr->bitmap[i] = curr->bitmap[i] | update->bitmap[i];
     
     curr->curr_radix = get_radix_from_bmap(curr->bitmap);
+
+    if (update->server_count > curr->server_count)
+        curr->server_count = update->server_count;
     
 #ifdef  DBG_INDEXING
     dbg_msg(log_fp, "[%s] updating the cached copy. success.", __func__);
@@ -237,10 +246,6 @@ void giga_update_mapping(struct giga_mapping_t *mapping, index_t new_index)
     bitmap_t mask = (bitmap_t)(1<<(bit_in_index));
     bitmap_t bit_info = mapping->bitmap[index_in_bmap];
    
-    // there is no reason for the new_index bit to be 1
-    // if set, somethings wrong with the one of the two funcs above
-    assert((bit_info & mask) != 1);
-
     bit_info = bit_info | mask;
     
     mapping->bitmap[index_in_bmap] = bit_info;
@@ -404,6 +409,8 @@ void giga_print_mapping(struct giga_mapping_t *mapping, FILE* fp)
     dbg_msg(fp,"=========="); 
     dbg_msg(fp,"printing the header table ... ");
     dbg_msg(fp,"\tradix=%d", mapping->curr_radix);
+    dbg_msg(fp,"\tzeroth server=%d", mapping->zeroth_server);
+    dbg_msg(fp,"\tserver count=%d", mapping->server_count);
     dbg_msg(fp,"\tbitmap_size=%d", MAX_BMAP_LEN);
     dbg_msg(fp,"\tbitmap (from 0th position)=");
     print_bitmap(mapping->bitmap, fp);

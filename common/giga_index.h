@@ -51,9 +51,12 @@ void giga_hash_name(const char *hash_key, char hash_value[]);
 
 // Initialize the mapping table.
 //
-void giga_init_mapping(struct giga_mapping_t *mapping, int flag);
+void giga_init_mapping(struct giga_mapping_t *mapping, int flag, 
+                       unsigned int zeroth_server, unsigned int server_count);
 void giga_init_mapping_from_bitmap(struct giga_mapping_t *mapping,
-                                   bitmap_t bitmap[], int bitmap_len); 
+                                   bitmap_t bitmap[], int bitmap_len, 
+                                   unsigned int zeroth_server, 
+                                   unsigned int server_count); 
 
 // Copy one mapping structure into another; the integer flag tells if the 
 // the destination should be filled with zeros (if z == 0);
