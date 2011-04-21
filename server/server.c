@@ -264,6 +264,11 @@ int main(int argc, char **argv)
 
     pvfs_connect(fs_spec);
 
+    if (skye_options.servernum == -1){
+        printf("ERROR: server hostname does not match any server in PVFS server list.");
+        exit(-1);
+    }
+
     server_socket(); 
 
     /* FIXME: we sleep 5 seconds here to let the other servers startup.  This

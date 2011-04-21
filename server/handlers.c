@@ -17,13 +17,24 @@
 #include <pvfs2-sysint.h>
 #include <pvfs2-mgmt.h>
 
-static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const char *name)
+static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const char *name, skye_bitmap *bitmap)
 {
     struct skye_directory *dir = cache_fetch(handle);
     if (!dir)
         return -EIO;
 
-    int index = giga_get_index_for_file(&dir->mapping, name);
+    /* don't do locality check if not provided bitmap to update */
+    if (bitmap){
+        int server = giga_get_server_for_file(&(dir->mapping), name);
+
+        if (server != skye_options.servernum){
+            printf("client attempted to contact server %d, should be contacting %d\n", skye_options.servernum, server);
+            memcpy(bitmap, &dir->mapping, sizeof(dir->mapping));
+            return -EAGAIN;
+        }
+    }
+
+    int index = giga_get_index_for_file(&(dir->mapping), name);
 
     cache_return(dir);
 
@@ -111,6 +122,15 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         return true;
     }
 
+    int server = giga_get_server_for_file(&dir->mapping, (const char*)path);
+
+    if (server != skye_options.servernum){
+        result->errnum = -EAGAIN;
+        memcpy(&(result->skye_lookup_u.bitmap), &dir->mapping, sizeof(dir->mapping));
+        printf("client attempted to contact server %d, should be contacting %d\n", skye_options.servernum, server);
+        return true;
+    }
+
     int index = giga_get_index_for_file(&dir->mapping, (const char*)path);
 
     cache_return(dir);
@@ -143,7 +163,7 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     (void)rqstp;
     int rc;
 
-    if ((rc = enter_bucket(&creds, &parent, (char*)filename)) < 0){
+    if ((rc = enter_bucket(&creds, &parent, (char*)filename, &(result->skye_lookup_u.bitmap))) < 0){
         result->errnum = rc;
         return true;
     }
@@ -228,7 +248,7 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     (void)rqstp;
     int rc;
 
-    if ((rc = enter_bucket(&creds, &parent, (char*)dirname)) < 0){
+    if ((rc = enter_bucket(&creds, &parent, (char*)dirname, &(result->skye_result_u.bitmap))) < 0){
         result->errnum = rc;
         return true;
     }
@@ -272,7 +292,7 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     (void)rqstp;
     int rc;
 
-    if ((rc = enter_bucket(&creds, &parent, (char*)filename)) < 0){
+    if ((rc = enter_bucket(&creds, &parent, (char*)filename, &(result->skye_result_u.bitmap))) < 0){
         result->errnum = rc;
         return true;
     }
@@ -315,12 +335,12 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
     (void)rqstp;
     int rc;
 
-    if ((rc = enter_bucket(&creds, &src_parent, (char*)src_name)) < 0){
+    if ((rc = enter_bucket(&creds, &src_parent, (char*)src_name, NULL)) < 0){
         result->errnum = rc;
         return true;
     }
 
-    if ((rc = enter_bucket(&creds, &dst_parent, (char*)dst_name)) < 0){
+    if ((rc = enter_bucket(&creds, &dst_parent, (char*)dst_name, &(result->skye_result_u.bitmap))) < 0){
         result->errnum = rc;
         return true;
     }
@@ -333,6 +353,29 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
         result->errnum = 0;
 
 	return true;
+}
+
+bool_t skye_rpc_bucket_add_1_svc(PVFS_object_ref handle, int index, int *result,
+                                 struct svc_req *rqstp) {
+    bool_t retval = true;
+    (void)handle;
+    (void)index;
+    (void)result;
+    (void)rqstp;
+
+    return retval;
+}
+
+bool_t skye_rpc_bucket_remove_1_svc(PVFS_object_ref handle, int index, int *result,
+                                    struct svc_req *rqstp)
+{
+    bool_t retval = true;
+    (void)handle;
+    (void)index;
+    (void)result;
+    (void)rqstp;
+
+    return retval;
 }
 
 /* TODO: What exactly am I supposed to do here? */

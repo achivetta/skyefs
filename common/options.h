@@ -7,6 +7,7 @@
 struct skye_options {
    char* pvfs_spec;
    int servercount;
+   int servernum;
    const char ** serverlist;
    PVFS_BMI_addr_t *serveraddrs;
 };

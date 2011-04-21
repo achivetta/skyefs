@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <fuse/fuse.h>
+#include <unistd.h>
 
 static CLIENT **rpc_clients;
 struct PVFS_sys_mntent pvfs_mntent;
@@ -20,6 +21,10 @@ PVFS_fs_id pvfs_fsid;
 static int pvfs_generate_serverlist(){
     int ret, servercount, i;
     PVFS_credentials credentials; PVFS_util_gen_credentials(&credentials);
+
+    char hostname[HOST_NAME_MAX];
+    gethostname(hostname, HOST_NAME_MAX);
+    skye_options.servernum = -1;
 
     ret = PVFS_mgmt_count_servers(pvfs_fsid,&credentials,PVFS_MGMT_META_SERVER,&servercount);
     if (ret < 0) return ret;
@@ -45,6 +50,9 @@ static int pvfs_generate_serverlist(){
         servers[i] = strndup(start + 1, end - start - 1);
 
         if (!servers[i]) return -ENOMEM; 
+        
+        if (strcmp(servers[i],hostname) == 0)
+            skye_options.servernum = i;
     }
 
     skye_options.serverlist = servers;

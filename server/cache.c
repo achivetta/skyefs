@@ -78,8 +78,6 @@ static struct skye_directory* new_directory(PVFS_object_ref *handle){
 
     fill_bitmap(&(dir->mapping),handle);
 
-    giga_print_mapping(&(dir->mapping), stderr);
-
     return dir;
 }
 

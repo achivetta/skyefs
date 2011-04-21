@@ -105,6 +105,10 @@ bitmap:
 	}
 
     if (result.errnum == -EAGAIN){
+        printf("updating the client mapping\nold mapping\n");
+        giga_print_mapping(&dir->mapping,stderr);
+        printf("new mapping\n");
+        giga_print_mapping(&result.skye_lookup_u.bitmap,stderr);
         update_client_mapping(dir, &result.skye_lookup_u.bitmap);
         goto bitmap;
     } else if (result.errnum < 0){
