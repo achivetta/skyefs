@@ -58,6 +58,6 @@ program SKYE_RPC_PROG {                 /* program number */
 
 		/* SERVER 2 SERVER API */
 		int SKYE_RPC_BUCKET_ADD(PVFS_object_ref, int) = 201;
-		int SKYE_RPC_BUCKET_REMOVE(PVFS_object_ref, int) = 202;
+		int SKYE_RPC_BUCKET_REMOVE(PVFS_credentials, PVFS_object_ref, int) = 202;
 	} = 1;
 } = 522222; /* FIXME: Is this a okay value for program number? */

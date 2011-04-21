@@ -72,7 +72,7 @@ static struct skye_directory* new_directory(PVFS_object_ref *handle){
     // FIXME: what should flag be?
     giga_init_mapping(&dir->mapping, -1, zeroth_server,
                       skye_options.servercount); 
-    dir->refcount = 0;
+    dir->refcount = 1; /* the hash table */
     dir->buckets = NULL;
     HASH_ADD(hh, dircache, handle, sizeof(PVFS_object_ref), dir);
 
@@ -100,4 +100,19 @@ struct skye_directory* cache_fetch(PVFS_object_ref *handle){
 void cache_return(struct skye_directory *dir){
     assert(dir->refcount > 0);
     dir->refcount--;
+
+    if (dir->refcount == 0)
+        free(dir);
+}
+
+/* when an object is deleted */
+void cache_destroy(struct skye_directory *dir){
+    assert(dir->refcount > 1);
+    dir->refcount--; /* once to release from the caller */
+
+    HASH_DEL(dircache, dir);
+    dir->refcount--; /* another to release from the hash table */
+
+    if (dir->refcount == 0)
+        free(dir);
 }

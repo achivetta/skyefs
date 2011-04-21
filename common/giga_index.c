@@ -259,6 +259,22 @@ void giga_update_mapping(struct giga_mapping_t *mapping, index_t new_index)
     return;
 }
 
+void giga_update_mapping_remove(struct giga_mapping_t *mapping, index_t new_index)
+{
+    int index_in_bmap = new_index / BITS_PER_MAP;
+    int bit_in_index = new_index % BITS_PER_MAP;
+
+    bitmap_t mask = (bitmap_t)(1<<(bit_in_index));
+    bitmap_t bit_info = mapping->bitmap[index_in_bmap];
+   
+    bit_info = bit_info & (~mask);
+    
+    mapping->bitmap[index_in_bmap] = bit_info;
+    mapping->curr_radix = get_radix_from_bmap(mapping->bitmap);
+
+    return;
+}
+
 
 // Returns the new index after splitting partition at ``index''
 //
@@ -371,6 +387,11 @@ index_t giga_get_index_for_file(struct giga_mapping_t *mapping,
 index_t giga_get_server_for_file(struct giga_mapping_t *mapping, 
                                 const char *filename){
     index_t index = giga_get_index_for_file(mapping,filename);
+    return giga_get_server_for_index(mapping, index);
+}
+
+index_t giga_get_server_for_index(struct giga_mapping_t *mapping, 
+                                  index_t index){
     return (index % mapping->server_count) + mapping->zeroth_server;
 }
 

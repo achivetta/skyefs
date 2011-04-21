@@ -28,7 +28,6 @@ static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const 
         int server = giga_get_server_for_file(&(dir->mapping), name);
 
         if (server != skye_options.servernum){
-            printf("client attempted to contact server %d, should be contacting %d\n", skye_options.servernum, server);
             memcpy(bitmap, &dir->mapping, sizeof(dir->mapping));
             return -EAGAIN;
         }
@@ -127,7 +126,6 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     if (server != skye_options.servernum){
         result->errnum = -EAGAIN;
         memcpy(&(result->skye_lookup_u.bitmap), &dir->mapping, sizeof(dir->mapping));
-        printf("client attempted to contact server %d, should be contacting %d\n", skye_options.servernum, server);
         return true;
     }
 
@@ -284,6 +282,64 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 	return true;
 }
 
+/* except the 0th bucket */
+static int remove_all_buckets(PVFS_credentials *creds, struct skye_directory *dir)
+{
+    PVFS_sysresp_readdir rd_response;
+    unsigned int pvfs_dirent_incount = 32; // reasonable chank size
+    PVFS_ds_position token = 0;
+
+    PVFS_object_ref *parent = &dir->handle;
+
+    do {
+        PVFS_dirent *cur_file = NULL;
+        unsigned int i;
+
+        memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
+        int ret = PVFS_sys_readdir(*parent, (!token ? PVFS_READDIR_START : token),
+                                pvfs_dirent_incount, creds, &rd_response,
+                                PVFS_HINT_NULL);
+        if (ret < 0)
+            return -1 * PVFS_get_errno_mapping(ret);
+
+        // FIXME: just abort if any partition is splitting
+        for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
+            cur_file = &(rd_response.dirent_array[i]);
+
+            index_t index;
+            sscanf(cur_file->d_name, "p%u", &index);
+
+            /* we don't remove the 0th bucket until the end */
+            if (index == 0)
+                continue;
+
+            CLIENT *client = get_connection(giga_get_server_for_index(&dir->mapping, index));
+
+            enum clnt_stat retval;
+            retval = skye_rpc_bucket_remove_1(*creds, *parent, index, &ret, client);
+            if (retval != RPC_SUCCESS){
+                clnt_perror(client, "RPC bucket remove failed");
+                return -EIO;
+            }
+
+            if (ret != 0)
+                return ret;
+        }
+        
+        if (!token)
+            token = rd_response.pvfs_dirent_outcount - 1;
+        else
+            token += rd_response.pvfs_dirent_outcount;
+
+        if (rd_response.pvfs_dirent_outcount) {
+            free(rd_response.dirent_array);
+            rd_response.dirent_array = NULL;
+        }
+
+    } while(rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
+
+    return 0;
+}
 
 bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
                             skye_pathname filename, skye_result *result, 
@@ -308,12 +364,31 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         return true;
     }
 
-    if (isdir(&creds, &(lk_response.ref))){
-        rc = PVFS_sys_remove("p00000", lk_response.ref, &creds, PVFS_HINT_NULL);
+    if (isdir(&creds, &lk_response.ref)){
+        struct skye_directory *dir = cache_fetch(&lk_response.ref);
+        rc = remove_all_buckets(&creds, dir);
+        if ( rc < 0 ){
+            result->errnum = rc;
+            return true;
+        }
+
+        rc = PVFS_sys_remove("p00000", dir->handle, &creds, PVFS_HINT_NULL);
         if ( rc < 0 ){
             result->errnum = -1 * PVFS_get_errno_mapping(rc);
             return true;
         }
+
+        /* FIXME: lock out access to the directory here */
+        rc = PVFS_sys_remove(filename, parent, &creds, PVFS_HINT_NULL);
+        if ( rc < 0 ){
+            result->errnum = -1 * PVFS_get_errno_mapping(rc);
+            return true;
+        }
+
+        cache_destroy(dir);
+        dir = NULL;
+
+        return true;
     }
 
     rc = PVFS_sys_remove(filename, parent, &creds, PVFS_HINT_NULL);
@@ -356,24 +431,53 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
 }
 
 bool_t skye_rpc_bucket_add_1_svc(PVFS_object_ref handle, int index, int *result,
-                                 struct svc_req *rqstp) {
+                                 struct svc_req *rqstp) 
+{
     bool_t retval = true;
-    (void)handle;
-    (void)index;
     (void)result;
     (void)rqstp;
+
+    struct skye_directory *dir = cache_fetch(&handle);
+
+    giga_update_mapping(&dir->mapping, index);
+
+    cache_return(dir);
+
+    *result = 0;
 
     return retval;
 }
 
-bool_t skye_rpc_bucket_remove_1_svc(PVFS_object_ref handle, int index, int *result,
+bool_t skye_rpc_bucket_remove_1_svc(PVFS_credentials creds, 
+                                    PVFS_object_ref handle, 
+                                    int index, int *result, 
                                     struct svc_req *rqstp)
 {
     bool_t retval = true;
-    (void)handle;
-    (void)index;
-    (void)result;
     (void)rqstp;
+
+
+    struct skye_directory *dir = cache_fetch(&handle);
+
+    if (!dir) {
+        *result = -ENOMEM;
+        return true;
+    }
+
+    char physical_path[MAX_LEN];
+    snprintf(physical_path, MAX_LEN, "p%05d", index);
+
+    int rc = PVFS_sys_remove(physical_path, handle, &creds, PVFS_HINT_NULL);
+    if ( rc < 0 ){
+        *result = -1 * PVFS_get_errno_mapping(rc);
+        return true;
+    }
+
+    giga_update_mapping_remove(&dir->mapping, index);
+
+    cache_return(dir);
+
+    *result = 0;
 
     return retval;
 }

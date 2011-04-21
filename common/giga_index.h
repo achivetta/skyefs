@@ -73,6 +73,8 @@ void giga_update_cache(struct giga_mapping_t *old_copy,
 //
 void giga_update_mapping(struct giga_mapping_t *mapping, index_t index);
 
+void giga_update_mapping_remove(struct giga_mapping_t *mapping, index_t index);
+
 // Print the struct giga_mapping_t contents in a file 
 //
 void giga_print_mapping(struct giga_mapping_t *mapping, FILE* output_fp);
@@ -103,6 +105,8 @@ index_t giga_get_index_for_file(struct giga_mapping_t *mapping,
 
 index_t giga_get_server_for_file(struct giga_mapping_t *mapping,
                                  const char *file_name);
+index_t giga_get_server_for_index(struct giga_mapping_t *mapping,
+                                  index_t index);
 
 // FIXME: what's this for?
 index_t giga_get_index_for_backup(index_t index); 

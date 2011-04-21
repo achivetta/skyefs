@@ -29,4 +29,6 @@ struct skye_directory* cache_fetch(PVFS_object_ref *handle);
  * refcount skye_directory objects */
 void cache_return(struct skye_directory *dir);
 
+void cache_destroy(struct skye_directory *dir);
+
 #endif
