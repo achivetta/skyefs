@@ -392,7 +392,7 @@ index_t giga_get_server_for_file(struct giga_mapping_t *mapping,
 
 index_t giga_get_server_for_index(struct giga_mapping_t *mapping, 
                                   index_t index){
-    return (index % mapping->server_count) + mapping->zeroth_server;
+    return (index + mapping->zeroth_server) % mapping->server_count;
 }
 
 // Check whether an existing file needs to be migrated to the newly split bkt.
