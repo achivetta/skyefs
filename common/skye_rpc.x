@@ -9,6 +9,7 @@
 %#include <pvfs2-types.h>
 %#include <sys/types.h>
 %#include "giga_index.h"
+%#include "skye_rpc_helper.h"
 #elif RPC_XDR
 %#include "skye_rpc_helper.h"
 %#pragma GCC diagnostic ignored "-Wunused-variable"

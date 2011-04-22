@@ -97,6 +97,39 @@ static int isdir_overflow(PVFS_credentials *creds, PVFS_object_ref *handle)
     return 0;
 } 
 
+static int pvfs_mkdir_server(PVFS_credentials *creds, PVFS_object_ref *parent, 
+                        char *dirname, PVFS_sys_attr *attr, int server, 
+                        PVFS_object_ref *child)
+{
+    (void)server;
+    PVFS_sysresp_mkdir resp_mkdir;
+
+    int created_on = -1;
+    PVFS_error rc = 0;
+    
+    while (1){
+        rc = PVFS_sys_mkdir(dirname, *parent, *attr, creds, &resp_mkdir,
+                            PVFS_HINT_NULL);
+        if (rc != 0)
+            return -1 * PVFS_get_errno_mapping(rc);
+
+        created_on = pvfs_get_mds(&resp_mkdir.ref);
+
+        if (created_on == server)
+            break;
+
+        rc = PVFS_sys_remove(dirname, *parent, creds, PVFS_HINT_NULL);
+        if (rc != 0)
+            return -1 * PVFS_get_errno_mapping(rc);
+    }
+
+    if (child)
+        memcpy(child, &(resp_mkdir.ref), sizeof(*child));
+
+    return 0;
+}
+
+
 bool_t skye_rpc_init_1_svc(bool_t *result, struct svc_req *rqstp)
 {
     (void)rqstp;
@@ -154,12 +187,130 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     return true;;
 }
 
-bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
+/* FIXME: confirm that bucket is still overflowing */
+static void perform_split(PVFS_object_ref parent, index_t pindex){
+    printf("START perform_split(%lu, %d)\n",parent.handle, pindex);
+    PVFS_credentials creds; PVFS_util_gen_credentials(&creds);
+    index_t cindex;
+    PVFS_object_ref phandle, chandle; /* child/logical directory handles */
+    int ret;
+
+    struct skye_directory *dir = cache_fetch(&parent);
+
+    cindex = giga_index_for_splitting(&dir->mapping, pindex);
+    printf("\tsplitting into %d\n",cindex);
+
+    char physical_path[MAX_LEN];
+    PVFS_sysresp_lookup lk_response;
+
+    /* lookup parent bucket's handle */
+    snprintf(physical_path, MAX_LEN, "p%05d", pindex);
+    memset(&lk_response, 0, sizeof(lk_response));
+    ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, parent,
+                              &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
+                              PVFS_HINT_NULL);
+    if ( ret < 0 ){
+        printf("\tOOPS couldn't lookup parent handle! (%d)\n", ret);
+        return;
+    }
+    phandle = lk_response.ref;
+    printf("\tparent bucket handle %lu\n",phandle.handle);
+
+    if (!isdir_overflow(&creds, &phandle)){
+        printf("\tOOPS directory not actually overflowing!\n");
+        return;
+    }
+
+    //FIXME: --- split begins: take appropriate flags
+
+    //(3) create a new partition (use giga to find the new index)
+
+    snprintf(physical_path, MAX_LEN, "p%05d", cindex);
+    int server = giga_get_server_for_index(&dir->mapping, cindex);
+
+    /* FIXME: clone attributes of parent directory */
+    PVFS_sys_attr attr;
+    memset(&attr, 0, sizeof(PVFS_sys_attr));
+    attr.owner = creds.uid;
+    attr.group = creds.gid;
+    attr.perms = 0777;
+    attr.mask = PVFS_ATTR_SYS_ALL_SETABLE;
+
+    // FIXME: this really shouldn't be called p000x yet in case we die...
+    ret = pvfs_mkdir_server(&creds, &parent, physical_path, &attr, server, &chandle);
+    if (ret < 0){
+        printf("\tOOPS couldn't create child bucket!\n");
+        return;
+    }
+
+    //(4) readdir() old partition, rename the files that will move
+
+    int moved;
+    do {
+        moved = 0;
+        PVFS_sysresp_readdir rd_response;
+        unsigned int pvfs_dirent_incount = 32; // reasonable chank size
+        PVFS_ds_position token = 0;
+
+        do {
+            unsigned int i;
+
+            memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
+            ret = PVFS_sys_readdir(phandle, (!token ? PVFS_READDIR_START : token),
+                                   pvfs_dirent_incount, &creds, &rd_response,
+                                   PVFS_HINT_NULL);
+            if (ret < 0)
+                return; /* FIXME: handle error */
+
+            for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
+                char *name = rd_response.dirent_array[i].d_name;
+
+                if (giga_file_migration_status(name, cindex)){
+                    printf("\tmoving file %s\n", name);
+                    ret = PVFS_sys_rename(name, phandle, 
+                                          name, chandle, 
+                                          &creds, PVFS_HINT_NULL);
+                    /* FIXME: what to do in case of error? */
+                    moved++;
+                } else {
+                    printf("\tnot moving file %s\n", name);
+                }
+            }
+
+            if (!token)
+                token = rd_response.pvfs_dirent_outcount - 1;
+            else
+                token += rd_response.pvfs_dirent_outcount;
+
+            if (rd_response.pvfs_dirent_outcount) {
+                free(rd_response.dirent_array);
+                rd_response.dirent_array = NULL;
+            }
+
+        } while(rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
+
+    } while (moved > 0);
+
+    //(5) after all entries have been moved, send RPC to server
+
+    CLIENT *client = get_connection(server);
+    ret = skye_rpc_bucket_add_1(parent, cindex, &ret, client);
+    // FIXME: if this fails?!?
+
+    // FIXME: --- reset all split flags after successful response from servers
+    
+    printf("DONE perform_split(%lu, %d)\n",parent.handle, pindex);
+}
+
+bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref logical_parent,
                              skye_pathname filename, mode_t mode, 
                              skye_lookup *result, struct svc_req *rqstp)
 {
     (void)rqstp;
     int rc;
+
+    PVFS_object_ref parent;
+    memcpy(&parent, &logical_parent, sizeof(parent));
 
     if ((rc = enter_bucket(&creds, &parent, (char*)filename, &(result->skye_lookup_u.bitmap))) < 0){
         result->errnum = rc;
@@ -189,54 +340,19 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         return true;
     }
 
-    //TODO: splitting logic
-    //
-    //(1) check the number of entries in the directory
-    //
-    //(2) if partition doesn't overflow, exit ... else
-    //--- split begins: take appropriate flags
-    //(3) create a new partition (use giga to find the new index)
-    //    --- when you create the new partition check if it created on the
-    //        correct server; if not, delete and re-create repeatedly
-    //(4) readdir() old partition, rename the files that will move
-    //(5) after all entries have been moved, send RPC to server
-    //--- reset all split flags after successful response from servers
-   
     if (isdir_overflow(&creds, &parent) == 1) {
-        // the partition (directory) is overflowing, let's split
+        /* FIXME: having to refetch the directory isn't ideal */
+        struct skye_directory *dir = cache_fetch(&parent);
+        int index = giga_get_index_for_file(&dir->mapping, filename);
+        printf("performing split!\n");
+        perform_split(logical_parent, index);
+        cache_return(dir);
     }
 
     result->errnum = 0;
     result->skye_lookup_u.ref = resp_create.ref;
 
     return true;
-}
-
-static int pvfs_mkdir_server(PVFS_credentials *creds, PVFS_object_ref *parent, 
-                        char *dirname, PVFS_sys_attr *attr, int server)
-{
-    (void)server;
-    PVFS_sysresp_mkdir resp_mkdir;
-
-    int created_on = -1;
-    PVFS_error rc = 0;
-    
-    while (1){
-        rc = PVFS_sys_mkdir(dirname, *parent, *attr, creds, &resp_mkdir,
-                            PVFS_HINT_NULL);
-        if (rc != 0)
-            return -1 * PVFS_get_errno_mapping(rc);
-
-        created_on = pvfs_get_mds(&resp_mkdir.ref);
-
-        if (created_on == server)
-            break;
-
-        rc = PVFS_sys_remove(dirname, *parent, creds, PVFS_HINT_NULL);
-        if (rc != 0)
-            return -1 * PVFS_get_errno_mapping(rc);
-    }
-    return 0;
 }
 
 bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
@@ -276,7 +392,7 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     int server = pvfs_get_mds(&parent);
 
     dirname = "p00000";
-    rc = pvfs_mkdir_server(&creds, &parent, dirname, &attr, server);
+    rc = pvfs_mkdir_server(&creds, &parent, dirname, &attr, server, NULL);
     result->errnum = rc;
 
 	return true;
@@ -442,8 +558,6 @@ bool_t skye_rpc_bucket_add_1_svc(PVFS_object_ref handle, int index, int *result,
     giga_update_mapping(&dir->mapping, index);
 
     cache_return(dir);
-
-    *result = 0;
 
     return retval;
 }
