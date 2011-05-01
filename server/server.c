@@ -267,6 +267,8 @@ int main(int argc, char **argv)
     if (skye_options.servernum == -1){
         printf("ERROR: server hostname does not match any server in PVFS server list.");
         exit(-1);
+    } else {
+        fprintf(stderr, "STARTED server %d\n", skye_options.servernum);
     }
 
     server_socket(); 

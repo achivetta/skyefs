@@ -105,10 +105,7 @@ bitmap:
 	}
 
     if (result.errnum == -EAGAIN){
-        printf("updating the client mapping\nold mapping\n");
-        giga_print_mapping(&dir->mapping,stderr);
-        printf("new mapping\n");
-        giga_print_mapping(&result.skye_lookup_u.bitmap,stderr);
+        fprintf(stderr, "skye_create(): got EAGAIN when trying to contact server %d\n", server_id);
         update_client_mapping(dir, &result.skye_lookup_u.bitmap);
         goto bitmap;
     } else if (result.errnum < 0){
@@ -416,7 +413,7 @@ int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
     }
     
 bitmap: 
-    server_id = get_server_for_file(dir, pathname);
+    server_id = get_server_for_file(dir, filename);
     CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_create_1(credentials, *ref, filename, mode, &result, rpc_client);
@@ -538,7 +535,7 @@ bitmap:
     enum clnt_stat retval;
     skye_result result;
     
-    server_id = get_server_for_file(dir, dst_path);
+    server_id = get_server_for_file(dir, dst_name);
     CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_rename_1(credentials, src_name, src_ref, dst_name, dst_ref, &result, rpc_client);

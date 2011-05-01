@@ -103,7 +103,7 @@ int rpc_connect(void)
         return -ENOMEM;
 
     for (i = 0; i < skye_options.servercount; i++){
-        int ret = rpc_host_connect(rpc_clients + i, skye_options.serverlist[i]);
+        int ret = rpc_host_connect(&rpc_clients[i], skye_options.serverlist[i]);
         if (ret < 0)
             return ret;
     }
