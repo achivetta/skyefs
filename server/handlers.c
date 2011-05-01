@@ -485,12 +485,14 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         rc = remove_all_buckets(&creds, dir);
         if ( rc < 0 ){
             result->errnum = rc;
+            cache_return(dir);
             return true;
         }
 
         rc = PVFS_sys_remove("p00000", dir->handle, &creds, PVFS_HINT_NULL);
         if ( rc < 0 ){
             result->errnum = -1 * PVFS_get_errno_mapping(rc);
+            cache_return(dir);
             return true;
         }
 
@@ -498,7 +500,9 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         rc = PVFS_sys_remove(filename, parent, &creds, PVFS_HINT_NULL);
         if ( rc < 0 ){
             result->errnum = -1 * PVFS_get_errno_mapping(rc);
-            return true;
+            /* FIXME: inconsistent state */
+        } else {
+            result->errnum = 0;
         }
 
         cache_destroy(dir);
@@ -513,7 +517,6 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         result->errnum = -1 * PVFS_get_errno_mapping(rc);
     else
         result->errnum = 0;
-
     
 	return true;
 }

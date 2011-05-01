@@ -105,7 +105,6 @@ bitmap:
 	}
 
     if (result.errnum == -EAGAIN){
-        fprintf(stderr, "skye_create(): got EAGAIN when trying to contact server %d\n", server_id);
         update_client_mapping(dir, &result.skye_lookup_u.bitmap);
         goto bitmap;
     } else if (result.errnum < 0){
@@ -565,7 +564,7 @@ int skye_remove(const char *path)
     PVFS_object_ref ref;
     PVFS_credentials credentials; gen_credentials(&credentials);
     char parent[MAX_PATHNAME_LEN], filename[MAX_FILENAME_LEN];
-    int ret;
+    int ret = 0, server_id;
 
 
     if ((ret = get_path_components(path, filename, parent)) < 0)
@@ -582,23 +581,30 @@ int skye_remove(const char *path)
         return -EIO;
     }
     
-    int server_id = get_server_for_file(dir, path);
+bitmap:
+    server_id = get_server_for_file(dir, filename);
     CLIENT *rpc_client = get_connection(server_id);
 
     retval = skye_rpc_remove_1(credentials, ref, filename, &result, rpc_client);
 	if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC remove failed");
-        cache_return(dir);
-        return -EIO;
+        ret = -EIO;
+        goto exit;
 	}
 
-    if (result.errnum < 0){
-        cache_return(dir);
-        return result.errnum;
+    if (result.errnum == -EAGAIN){
+        update_client_mapping(dir, &result.skye_result_u.bitmap);
+        goto bitmap;
+    } else if (result.errnum < 0){
+        ret = result.errnum;
+        goto exit;
+    } else {
+        ret = result.errnum;
     }
 
+exit:
     cache_return(dir);
-    return 0;
+    return ret;
 }
 
 int skye_unlink(const char *path)
