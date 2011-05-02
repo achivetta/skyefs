@@ -2,6 +2,7 @@
 #include "common/giga_index.h"
 #include "common/connection.h"
 #include "common/options.h"
+#include "common/trace.h"
 #include <pvfs2-types.h>
 #include <pvfs2-util.h>
 #include <assert.h>
@@ -38,11 +39,12 @@ static void fill_bitmap(struct giga_mapping_t *mapping, PVFS_object_ref *handle)
             cur_file = &(rd_response.dirent_array[i]);
 
             index_t index;
-            sscanf(cur_file->d_name, "p%u", &index);
-            giga_update_mapping(mapping, index);
+            if (sscanf(cur_file->d_name, "p%u", &index) == 1)
+                giga_update_mapping(mapping, index);
+            else
+                err_msg("Unable to add directory %s to bitmap.\n", cur_file->d_name);
 
             //TODO: establish bucket structures here
-
         }
         
         if (!token)

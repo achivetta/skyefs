@@ -208,7 +208,7 @@ static void perform_split(PVFS_object_ref parent, index_t pindex){
                               &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
     if ( ret < 0 ){
-        dbg_msg(stderr, "couldn't lookup parent handle! (%d)\n", ret);
+        err_msg("Couldn't lookup parent handle! (%d)\n", ret);
         goto exit;
     }
     phandle = lk_response.ref;
@@ -236,7 +236,7 @@ static void perform_split(PVFS_object_ref parent, index_t pindex){
     // FIXME: this really shouldn't be called p000x yet in case we die...
     ret = pvfs_mkdir_server(&creds, &parent, physical_path, &attr, server, &chandle);
     if (ret < 0){
-        dbg_msg(stderr, "couldn't create child bucket!\n");
+        err_msg("couldn't create child bucket!\n");
         goto exit;
     }
 
@@ -257,7 +257,7 @@ static void perform_split(PVFS_object_ref parent, index_t pindex){
                                    pvfs_dirent_incount, &creds, &rd_response,
                                    PVFS_HINT_NULL);
             if (ret < 0){
-                dbg_msg(stderr, "couldn't list parent directory\n");
+                err_msg("couldn't list parent directory\n");
                 goto exit; /* FIXME: handle error */
             }
 
@@ -342,7 +342,7 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref logical_par
 
     if (isdir_overflow(&creds, &parent) == 1) {
         /* FIXME: having to refetch the directory isn't ideal */
-        struct skye_directory *dir = cache_fetch(&parent);
+        struct skye_directory *dir = cache_fetch(&logical_parent);
         int index = giga_get_index_for_file(&dir->mapping, filename);
         perform_split(logical_parent, index);
         cache_return(dir);
@@ -531,6 +531,7 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
     /* FIXME: if we have stale source information, we might never know, so we
      * have this ugly hack here now */
     cache_invalidate(&src_parent);
+
     if ((rc = enter_bucket(&creds, &src_parent, (char*)src_name, NULL)) < 0){
         result->errnum = rc;
         return true;
@@ -545,7 +546,7 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
                              &creds, PVFS_HINT_NULL);
     if (rc != 0){
         result->errnum = -1 * PVFS_get_errno_mapping(rc);
-        dbg_msg(stderr, "Unable to rename file\n");
+        err_msg("Unable to rename file.\n");
     } else {
         result->errnum = 0;
     }
