@@ -116,3 +116,8 @@ void cache_destroy(struct skye_directory *dir){
     if (dir->refcount == 0)
         free(dir);
 }
+
+void cache_invalidate(PVFS_object_ref *handle){
+    struct skye_directory *dir = cache_fetch(handle);
+    cache_destroy(dir);
+}

@@ -188,7 +188,6 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     return true;;
 }
 
-/* FIXME: confirm that bucket is still overflowing */
 static void perform_split(PVFS_object_ref parent, index_t pindex){
     PVFS_credentials creds; PVFS_util_gen_credentials(&creds);
     index_t cindex;
@@ -214,8 +213,8 @@ static void perform_split(PVFS_object_ref parent, index_t pindex){
     }
     phandle = lk_response.ref;
 
+    /* FIXME: need to invalidate metadata first ? */
     if (!isdir_overflow(&creds, &phandle)){
-        dbg_msg(stderr, "directory not actually overflowing!\n");
         goto exit;
     }
 
@@ -529,7 +528,9 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
     (void)rqstp;
     int rc;
 
-    /* FIXME: if we have stale source information, we might never know */
+    /* FIXME: if we have stale source information, we might never know, so we
+     * have this ugly hack here now */
+    cache_invalidate(&src_parent);
     if ((rc = enter_bucket(&creds, &src_parent, (char*)src_name, NULL)) < 0){
         result->errnum = rc;
         return true;
@@ -542,10 +543,12 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
 
     rc = PVFS_sys_rename(src_name, src_parent, dst_name, dst_parent,
                              &creds, PVFS_HINT_NULL);
-    if (rc != 0)
+    if (rc != 0){
         result->errnum = -1 * PVFS_get_errno_mapping(rc);
-    else
+        dbg_msg(stderr, "Unable to rename file\n");
+    } else {
         result->errnum = 0;
+    }
 
 	return true;
 }

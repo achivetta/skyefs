@@ -31,4 +31,6 @@ void cache_return(struct skye_directory *dir);
 
 void cache_destroy(struct skye_directory *dir);
 
+void cache_invalidate(PVFS_object_ref *handle);
+
 #endif
