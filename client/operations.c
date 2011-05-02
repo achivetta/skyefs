@@ -124,6 +124,51 @@ bitmap:
     return ret;
 }
 
+/** Updates parent_ref to point to the bucket of specified child */
+static int partition(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pathname)
+{
+    int ret = 0, server_id;
+	enum clnt_stat retval;
+	skye_lookup result;
+
+    if (strlen(pathname) >= MAX_FILENAME_LEN)
+        return -ENAMETOOLONG;
+
+    struct skye_directory *dir = cache_fetch(ref);
+    if (!dir)
+        return -EIO;
+    
+bitmap: 
+    server_id = get_server_for_file(dir, pathname);
+    CLIENT *rpc_client = get_connection(server_id);
+
+	retval = skye_rpc_partition_1(*credentails, *ref, pathname, &result, rpc_client);
+	if (retval != RPC_SUCCESS) {
+		clnt_perror (rpc_client, "RPC lookup failed");
+        ret = -EIO;
+        goto exit;
+	}
+
+    if (result.errnum == -EAGAIN){
+        update_client_mapping(dir, &result.skye_lookup_u.bitmap);
+        goto bitmap;
+    } else if (result.errnum < 0){
+        ret = result.errnum;
+        goto exit;
+    } else {
+        ret = 0;
+    }
+
+    /* Giga+: Add a section here for reading out the bitmap */
+
+    memcpy(ref, &result.skye_lookup_u.ref, sizeof(PVFS_object_ref));
+
+ exit:
+    cache_return(dir);
+
+    return ret;
+}
+
 static int resolve(PVFS_credentials *credentials, const char* pathname, PVFS_object_ref* ref)
 {
 
@@ -507,7 +552,7 @@ int skye_rename(const char *src_path, const char *dst_path)
     PVFS_object_ref src_ref;
     char src_name[MAX_FILENAME_LEN] = {0};
     char src_dir[MAX_PATHNAME_LEN] = {0};
-    int ret, server_id;
+    int ret, server_id, retry_count = 3;
 
     if ((ret = get_path_components(src_path, src_name, src_dir)) < 0)
         return ret;
@@ -518,8 +563,14 @@ int skye_rename(const char *src_path, const char *dst_path)
     if ((ret = get_path_components(dst_path, dst_name, dst_dir)) < 0)
         return ret;
 
+retry:
+
     if ((ret = resolve(&credentials, src_dir, &src_ref)) < 0)
         return ret;
+
+    if ((ret = partition(&credentials, &src_ref, src_name)) < 0)
+        return ret;
+
     if ((ret = resolve(&credentials, dst_dir, &dst_ref)) < 0)
         return ret;
     
@@ -544,14 +595,18 @@ bitmap:
         goto exit;
 	}
 
-    if (result.errnum == -EAGAIN){
+    ret = result.errnum;
+    if (ret == -EAGAIN){
         update_client_mapping(dir, &result.skye_result_u.bitmap);
         goto bitmap;
-    } else if (result.errnum < 0){
-        ret = result.errnum;
-        goto exit;
-    } else {
-        ret = result.errnum;
+    } 
+    if (ret == -ENOENT){
+        if (retry_count){
+            err_msg("rename() encountered an ENOENT, retrying (%d more times).\n", retry_count);
+            retry_count--;
+            goto retry;
+        }
+        err_msg("rename() encountered an ENOENT too many times, giving up..\n", retry_count);
     }
 
 exit:

@@ -188,6 +188,66 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     return true;;
 }
 
+/* FIXME: lots of code duplication with lookup */
+bool_t skye_rpc_partition_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
+                             skye_pathname path, skye_lookup *result, 
+                             struct svc_req *rqstp)
+{
+    (void)rqstp;
+
+    struct skye_directory *dir = cache_fetch(&parent);
+    if (!dir){
+        result->errnum = -EIO;
+        return true;
+    }
+
+    int server = giga_get_server_for_file(&dir->mapping, (const char*)path);
+
+    if (server != skye_options.servernum){
+        result->errnum = -EAGAIN;
+        memcpy(&(result->skye_lookup_u.bitmap), &dir->mapping, sizeof(dir->mapping));
+        cache_return(dir);
+        return true;
+    }
+
+    int index = giga_get_index_for_file(&dir->mapping, (const char*)path);
+
+    cache_return(dir);
+
+    char physical_path[MAX_LEN];
+    snprintf(physical_path, MAX_LEN, "p%05d/%s", index, (const char*)path);
+
+    PVFS_sysresp_lookup lk_response;
+    int ret;
+
+    memset(&lk_response, 0, sizeof(lk_response));
+    ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, parent,
+                              &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
+                              PVFS_HINT_NULL);
+    if ( ret < 0 ) {
+        result->errnum = -1 * PVFS_get_errno_mapping(ret);
+        return true;
+    }
+
+    /* so, the file exists, now we descend just into the bucket */
+
+    snprintf(physical_path, MAX_LEN, "p%05d", index);
+
+    memset(&lk_response, 0, sizeof(lk_response));
+    ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, parent,
+                              &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
+                              PVFS_HINT_NULL);
+    if ( ret < 0 ) {
+        result->errnum = -1 * PVFS_get_errno_mapping(ret);
+        return true;
+    }
+
+    result->skye_lookup_u.ref = lk_response.ref;
+    result->errnum = 0;
+
+    return true;;
+}
+
 static void perform_split(PVFS_object_ref parent, index_t pindex){
     PVFS_credentials creds; PVFS_util_gen_credentials(&creds);
     index_t cindex;
@@ -528,14 +588,7 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
     (void)rqstp;
     int rc;
 
-    /* FIXME: if we have stale source information, we might never know, so we
-     * have this ugly hack here now */
-    cache_invalidate(&src_parent);
-
-    if ((rc = enter_bucket(&creds, &src_parent, (char*)src_name, NULL)) < 0){
-        result->errnum = rc;
-        return true;
-    }
+    dbg_msg(stderr, "[%s] renaming #{%lu}/%s -> #{%lu}/%s", __func__, src_parent.handle, src_name, dst_parent.handle, dst_name);
 
     if ((rc = enter_bucket(&creds, &dst_parent, (char*)dst_name, &(result->skye_result_u.bitmap))) < 0){
         result->errnum = rc;
@@ -546,7 +599,7 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
                              &creds, PVFS_HINT_NULL);
     if (rc != 0){
         result->errnum = -1 * PVFS_get_errno_mapping(rc);
-        err_msg("Unable to rename file.\n");
+        err_msg("[%s] Unable to rename file (%d).", __func__, result->errnum);
     } else {
         result->errnum = 0;
     }

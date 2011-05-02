@@ -47,6 +47,7 @@ program SKYE_RPC_PROG {                 /* program number */
 
 		/* CLIENT API */
 		skye_lookup SKYE_RPC_LOOKUP(PVFS_credentials, PVFS_object_ref, skye_pathname) = 2;
+		skye_lookup SKYE_RPC_PARTITION(PVFS_credentials, PVFS_object_ref, skye_pathname) = 3;
 		
 		skye_lookup SKYE_RPC_CREATE(PVFS_credentials, PVFS_object_ref, skye_pathname,
 				mode_t) = 101;

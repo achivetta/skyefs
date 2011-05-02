@@ -84,7 +84,6 @@ static int rpc_host_connect(CLIENT **rpc_client, const char *host)
     }
     memcpy(&addr.sin_addr, he->h_addr_list[0], he->h_length);
 
-    dbg_msg(stderr, "[%s] connecting to server %s\n", __func__ , host);
     *rpc_client = clnttcp_create (&addr, SKYE_RPC_PROG, SKYE_RPC_VERSION, &sock, 0, 0);
     if (*rpc_client == NULL) {
         clnt_pcreateerror (NULL);
@@ -232,6 +231,11 @@ int pvfs_connect(char *fs_spec)
     pvfs_fsid = me->fs_id;
 
     ret = pvfs_generate_serverlist();
+
+    /* XXX: Turn off attribute caches, they screw with us.  In the future, we
+     * might want to investigate invalidating them only when needed. */
+    PVFS_sys_set_info(PVFS_SYS_NCACHE_TIMEOUT_MSECS, 0);
+    PVFS_sys_set_info(PVFS_SYS_ACACHE_TIMEOUT_MSECS, 0);
 
     return ret;
 }

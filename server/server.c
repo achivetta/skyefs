@@ -54,8 +54,6 @@ static void sig_handler(const int sig)
 
 static void * handler_thread(void *arg)
 {
-    dbg_msg(log_fp, "[%s] Start thread handler.", __func__);
-    
     int fd = (int) (long) arg;
     SVCXPRT *svc = svcfd_create(fd, 0, 0);
     
@@ -65,7 +63,6 @@ static void * handler_thread(void *arg)
         goto leave;
     }
     
-    dbg_msg(log_fp, "[%s] Enter RPC select().", __func__);
     while (1) {
         fd_set readfds, exceptfds;
         FD_ZERO(&readfds);
@@ -75,7 +72,7 @@ static void * handler_thread(void *arg)
         FD_SET(fd, &exceptfds);
 
         if (select(fd + 1, &readfds, NULL, &exceptfds, NULL) < 0){
-            err_msg("ERROR: during select() on a client socket. %s\n", strerror(errno));
+            err_msg("[%s] Error during select() on a client socket. %s", __func__, strerror(errno));
             break;
         }
 
@@ -92,7 +89,7 @@ static void * handler_thread(void *arg)
 leave:
     close(fd);
 
-    dbg_msg(log_fp, "[%s] Stop thread handler.", __func__);
+    dbg_msg(log_fp, "[%s] Connection closed.", __func__);
 
     return 0;
 }
@@ -101,8 +98,6 @@ static void * main_select_loop(void * listen_fd_arg)
 {
     int conn_fd;
     long listen_fd = (long) listen_fd_arg;
-    
-    dbg_msg(log_fp, "[%s] Starting select().", __func__);
     
     while (1) {
         fd_set fds;
@@ -144,8 +139,6 @@ static void * main_select_loop(void * listen_fd_arg)
 
 static void setup_listener(int listen_fd)
 {
-    dbg_msg(log_fp, "[%s] Listener setup.", __func__);
-
     struct sockaddr_in serv_addr;
     bzero(&serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
@@ -265,10 +258,7 @@ int main(int argc, char **argv)
     pvfs_connect(fs_spec);
 
     if (skye_options.servernum == -1){
-        printf("ERROR: server hostname does not match any server in PVFS server list.");
-        exit(-1);
-    } else {
-        fprintf(stderr, "STARTED server %d\n", skye_options.servernum);
+        err_quit("ERROR: server hostname does not match any server in PVFS server list.");
     }
 
     server_socket(); 
@@ -278,6 +268,8 @@ int main(int argc, char **argv)
      */
     sleep(5);
     rpc_connect();
+
+    dbg_msg(stderr, "[%s] Server %d online!", __func__, skye_options.servernum);
 
     void *retval;
 

@@ -42,7 +42,7 @@ static void fill_bitmap(struct giga_mapping_t *mapping, PVFS_object_ref *handle)
             if (sscanf(cur_file->d_name, "p%u", &index) == 1)
                 giga_update_mapping(mapping, index);
             else
-                err_msg("Unable to add directory %s to bitmap.\n", cur_file->d_name);
+                err_dump("Unable to add directory %s to bitmap.\n", cur_file->d_name);
 
             //TODO: establish bucket structures here
         }
