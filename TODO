@@ -1,5 +1,7 @@
+  * Switch to low level FUSE and async PVFS
   * Refactor the word 'bucket' out of the code, it should be 'partition'
   * Refactor code that does a readdir to use only one copy of the loop
   * Double check we correctly convert all PVFS error codes
   * Fix up error/debug output.  In particular, ensure function or file+line is
   always printed and print server number.
+  * Proper PVFS error handling, see pvfs2-types.h:537

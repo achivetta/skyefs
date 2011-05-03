@@ -1,0 +1,95 @@
+<title, authors>
+-----------------------
+SkyeFS: User-level Cluster Filesystem (PVFS) with Scalable Directories
+(GIGA+)
+Anthony Chivetta, Swapnil Patil and Garth Gibson
+
+<section.1>
+----------------
+TITLE: Overview
+
+SkyeFS provides a scalable directory service for PVFS through a user-level
+layering of GIGA+ distributed indexing
+- GIGA+ partitions represented as PVFS directories
+- SkyeFS server process on each PVFS metadata server provides coordination and
+  splitting for partitions hosted on that server.
+
+== <insert design.pdf>
+
+<section.2>
+-----------------
+TITLE: Operations in SkyeFS
+
+File/Directory creation operation
+--- <insert fig1.pdf>
+
+File/Directory read/lookup operation
+--- <insert fig2.pdf>
+
+Rename operation
+---  <insert fig3.pdf>
+
+Readdir operation
+--- <insert fig4.pdf>
+--- <insert fig5.pdf>
+
+<section.3>
+------------------
+TITLE: PVFS features used in SkyeFS
+
+Persistant Handles
+  - Each file and directory in PVFS has a persistent metadata handle.
+  - These handles persist across renames of files allowing a client to hold them
+    across multiple operations.
+  - Most file operations are performed directly against PVFS by the SkyeFS
+    client using these handles.
+
+Metadata Server per Directory: 
+  - Each directory (and it's directory entries)  in PVFS resides in one Metadata
+    Server (MDS).  
+  - We can simulate distributed metadata by splitting a logical directory into
+    multiple physical directories.  
+  - Each partition in the Giga+ algorithm is therefore mapped to a physical
+    directory 
+
+<section.4>
+------------------
+TITLE: Other operational issues
+
+Initial Lookup: 
+  - When a client knows nothing about a particular logical directory, it must
+    make a guess for which server to contact.  
+  - Always selecting the 0th server ensures that the contacted server will know
+    some information about the directory in question, however can result in
+    unbalanced load.  
+  - Picking a server at random does not guarantee that the chosen server will be
+    able to provide useful information.
+
+Recursive Lookup: 
+  - For ideal load balancing, each directory in the hierarchy should be located
+    on a different server.  
+  - However, this prevents the system from descending multiple steps in the path
+    during a single lookup.  
+  - It would be beneficial in the event of deep directory structures to cluster
+    directories on the same server to limit the number of RPCs required to
+    complete the lookup.
+
+Server Addition: 
+  - The Giga+ algorithm defines a method for the addition of new
+    servers to a cluster.  
+  - PVFS also allows addition of servers, but does not support migration of
+    existing data or metadata.  
+  - The addition of SkyeFS on top of PVFS can assist in the automatic migration
+    of metadata to new servers by splitting overfull partitions as per the Giga+
+    algorithm.
+
+Fault Tolerence: 
+  - As a user of PVFS, SkyeFS inherits PVFS's fault tolerence properties.  
+  - To ensure that SkyeFS does not introduce additional failure cases
+    we store a absolute minimum of metadata as extended attributes on
+    directories.
+  - The bitmap for a directory can be determined by listing the partitions that
+    exist and the zeroth server can be determined by examining the PVFS handle
+    of the directory.
+  - These techniques minimize, and in most cases eliminate, the risk of leaving
+    the SkyeFS filesystem in an inconsistent state.
