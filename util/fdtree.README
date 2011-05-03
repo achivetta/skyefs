@@ -1,0 +1,91 @@
+/******************************************************************************\
+*                                                                              *
+*        Copyright (c) 2004, The Regents of the University of California       *
+*      See the file COPYRIGHT for a complete copyright notice and license.     *
+*                                                                              *
+\******************************************************************************/
+
+             FILE AND DIRECTORY TREE CREATION/REMOVAL TIMING TEST
+********************************** WARNING ON ******************************
+BE VERY CAREFUL WITH THIS TEST AS IT CAN CREATE A VERY LARGE DIRECTORY TREE
+AND A GREAT DEAL OF DATA SIMPLY BY CHOOSING THE WRONG PARAMATERS.  STAY WITH
+THE DEFAULTS UNTIL YOU UNDERSTAND THE PARAMATERS...
+********************************** WARNING OFF *****************************
+
+This script recursively creates level_depth directories below pathname with 
+files_per_dir files in every directory of size size_of_files.  
+Every directory except leaf directories then have dirs_per_level 
+subdirectories and so on.  Default starting point is "LEVEL0" directory in
+the current working directory.
+The directories are created first, by recursion and then the files in each
+directory are created by writing to them by another recursion.  
+Then the files are deleted by another recursion. 
+Finally the directories are removed by recursion.  
+Times for each operation are reported.
+
+Written by Mark K. Seager (seager@llnl.gov, 925-423-3141) and
+           Bill Loewe (wel@llnl.gov, 925-422-5587)
+
+********************************************************************************
+
+fdtree.bash [-C] [-D] [-R] [-l level_depth] [-d dirs_per_level]
+	    [-f files_per_dir] [-s size_of_files (in file system blocks)]
+	    [-o pathname]
+	    -C create structure only
+	    -D turns on debugging
+	    -R remove structure only
+	    -l is the number of recursive levels below LEVEL0
+	    -d is the number of directories to create per level
+	    -f is the number of files to create per directory
+	    -o is the starting directory pathname
+	    -s is the file size (in blocks, 4096 for Linux, to create)
+
+WARNING: directories and files created increases polynomically with -l.
+Be careful, very careful.  Your filesystem may suffer...
+
+EXAMPLE: fdtree.bash -d 1 -l 2 -f 10000 -s 10000
+	This example is a file stress test and creates two levels with one
+	directory each and 10K files in each directory of size 10K*4K blocks.
+	This is 40,960,000B = 40.96 MB of data per file
+	or 2*409,600,000,000B = 819.2 GB of data.
+	You should NOT attempt this at home...
+
+EXAMPLE: fdtree.bash -d 10000 -l 100
+	This is a directory stress test and creates 100 levels with
+	10K directories per level.
+	This is 10K directories in the first level and
+	(10K)*(10K) directories in the second level and
+	(10K)*(10K)*(10K) directories in the third level and so on.
+	10K**100 = 10**500 directories at the 100th level.
+	You should NOT attempt this at home OR work...
+
+********************************************************************************
+
+sample output:
+% time fdtree.bash -f 3 -d 5
+fdtree: starting at ./LEVEL0
+	creating 4 directory levels with 5 directories at each level
+	for a total of 781 directories
+	with 3 files of size 40 KiB per directory
+	for a total of 2343 files and 9372 KiB
+
+Thu Jun 10 11:07:55 2004
+DIRECTORY CREATE TIME IN, OUT, TOTAL	= 0, 0, 0
+	Directory creates per second	= 1114
+
+Thu Jun 10 11:07:55 2004
+FILE CREATE TIME IN, OUT, TOTAL	= 0, 11, 10
+	File creates per second		= 72
+	KiB per second			= 875
+
+Thu Jun 10 11:08:06 2004
+FILE REMOVE TIME IN, OUT, TOTAL	= 11, 14, 3
+	File removals per second	= 684
+
+Thu Jun 10 11:08:09 2004
+DIRECTORY REMOVE TIME IN, OUT, TOTAL	= 14, 15, 0
+	Directory removals per second	= 2790
+
+Thu Jun 10 11:08:10 2004
+0.310u 1.020s 0:15.52 8.5%	0+0k 0+0io 400pf+0w
+

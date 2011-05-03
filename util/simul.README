@@ -1,0 +1,80 @@
+Simul Overview
+--------------
+
+"simul" is an MPI coordinated test of parallel filesystem system calls and
+library functions.  It was designed to perform filesystem operations
+simultaneously from many nodes and processes to test the correctness
+and coherence of parallel filesystems.
+
+Many of the tests require a setup and/or cleanup phase, e.g. the test
+of the open() system call requires that a file first be created.  In
+such cases, simul takes pains to make the setup and cleanup for each
+test as low-impact as possible.  Normally the setup and cleanup phases
+are sequentialized, so setup/cleanup is performed one process at a
+time, or only a single process performs setup and cleanup for all of
+the processes.
+
+All of the tests that simul performs are number, and a simul's tests
+can be retrieved by giving simul the "-h" option.
+
+The only required parameter when running simul is the "-d" option,
+which is used to tell simul the target directory in which all of the
+tests should be performed.
+
+Simul Parameters
+----------------
+
+-d : the directory in which the tests will run [required!]
+
+-h : prints a help message
+
+-v : Inceases the verbosity level by 1 each time it appears on the command line
+
+-V # : Select verbosity level "#"
+
+-f : the number of the first test to run (default: 0)
+
+     Example:
+
+        simul -d /test/directory -f 13
+
+	This will start with test number 13, and run all of the tests
+	numbered greater than 13.
+
+-l : the number of the last test to run (default: 39)
+
+     Example:
+
+        simul -d /test/directory -l 16
+
+	This will start with test number 0, and run all of the tests
+	up to, and including, test 16.
+
+     Example:
+
+	simul -d /test/directory -f 5 -l 7
+
+        This will run tests 5, 6, and 7
+
+-i : comma-sperated list of tests to include
+
+     Example:
+
+	simul -d /test/directory -i 12
+
+        Simul will only run test number 12.
+
+     Example:
+
+        simul -d /test/directory -i 2,4,7,38
+
+        Simul will run tests 2, 4, 7, and 38.
+
+-e : comma-sperated list of tests to exclude
+
+-s : "single-step" mode.  simul will prompt the user to hit a key
+     before every test.
+
+-n # : repeat each test # times
+
+-N # : repeat the entire set of tests # times
