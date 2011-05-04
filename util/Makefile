@@ -3,9 +3,9 @@ include ../Makefile.inc
 CFLAGS += -iquote ..
 LDFLAGS += -lpthread `pkg-config fuse --libs`
 
-TARGETS = mdtest simul
+TARGETS = gigabench mdtest simul
 
-all: $(TARGETS)
+all: gigabench
 
 $(OBJS) : $(HDRS)
 
@@ -14,6 +14,8 @@ mdtest: mdtest.c
 
 simul: simul.c
 	mpicc -Wall -o simul simul.c
+
+gigabench: gigabench.o gigabench_ops.o
 
 clean :
 	rm -f $(TARGETS) $(OBJS)
