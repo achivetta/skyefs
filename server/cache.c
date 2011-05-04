@@ -67,6 +67,11 @@ static struct skye_directory* new_directory(PVFS_object_ref *handle){
     if (!dir)
         return NULL;
 
+    if (pthread_rwlock_init(&dir->rwlock, NULL)){
+        free(dir);
+        return NULL;
+    }
+
     memcpy(&dir->handle, handle, sizeof(PVFS_object_ref));
 
     unsigned int zeroth_server = pvfs_get_mds(handle);
@@ -74,8 +79,11 @@ static struct skye_directory* new_directory(PVFS_object_ref *handle){
     // FIXME: what should flag be?
     giga_init_mapping(&dir->mapping, -1, zeroth_server,
                       skye_options.servercount); 
+
     dir->refcount = 1; /* the hash table */
-    dir->buckets = NULL;
+
+    dir->splitting_index = -1;
+
     HASH_ADD(hh, dircache, handle, sizeof(PVFS_object_ref), dir);
 
     fill_bitmap(&(dir->mapping),handle);
@@ -83,7 +91,7 @@ static struct skye_directory* new_directory(PVFS_object_ref *handle){
     return dir;
 }
 
-struct skye_directory* cache_fetch(PVFS_object_ref *handle){
+static struct skye_directory *fetch(PVFS_object_ref *handle){
     struct skye_directory *dir = NULL;
 
     HASH_FIND(hh, dircache, handle, sizeof(PVFS_object_ref), dir);
@@ -94,32 +102,42 @@ struct skye_directory* cache_fetch(PVFS_object_ref *handle){
     if (!dir)
         return NULL;
 
-    dir->refcount++;
+    /* increment ref count */
+    __sync_fetch_and_add(&dir->refcount, 1);
 
     return dir;
 }
 
-void cache_return(struct skye_directory *dir){
-    assert(dir->refcount > 0);
-    dir->refcount--;
+struct skye_directory* cache_fetch(PVFS_object_ref *handle){
+    struct skye_directory *dir = fetch(handle);
+    pthread_rwlock_rdlock(&dir->rwlock);
+    return dir;
+}
 
-    if (dir->refcount == 0)
+struct skye_directory* cache_fetch_w(PVFS_object_ref *handle){
+    struct skye_directory *dir = fetch(handle);
+    pthread_rwlock_wrlock(&dir->rwlock);
+    return dir;
+}
+
+void cache_return(struct skye_directory *dir){
+    pthread_rwlock_unlock(&dir->rwlock);
+
+    assert(dir->refcount > 0);
+
+    if (__sync_sub_and_fetch(&dir->refcount, 1) == 0)
         free(dir);
 }
 
 /* when an object is deleted */
 void cache_destroy(struct skye_directory *dir){
     assert(dir->refcount > 1);
-    dir->refcount--; /* once to release from the caller */
+
+    /* once to release from the caller */
+    __sync_fetch_and_sub(&dir->refcount, 1);
 
     HASH_DEL(dircache, dir);
-    dir->refcount--; /* another to release from the hash table */
 
-    if (dir->refcount == 0)
+    if (__sync_sub_and_fetch(&dir->refcount, 1) == 0)
         free(dir);
-}
-
-void cache_invalidate(PVFS_object_ref *handle){
-    struct skye_directory *dir = cache_fetch(handle);
-    cache_destroy(dir);
 }

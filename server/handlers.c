@@ -17,42 +17,36 @@
 #include <pvfs2-sysint.h>
 #include <pvfs2-mgmt.h>
 
-static int enter_bucket(PVFS_credentials *creds, PVFS_object_ref *handle, const char *name, skye_bitmap *bitmap)
+static int enter_bucket(PVFS_credentials *creds, struct skye_directory *dir, const char *name, PVFS_object_ref *handle, skye_bitmap *bitmap)
 {
-    struct skye_directory *dir = cache_fetch(handle);
-    if (!dir)
-        return -EIO;
+    int index = giga_get_index_for_file(&(dir->mapping), name);
 
     /* don't do locality check if not provided bitmap to update */
     if (bitmap){
-        int server = giga_get_server_for_file(&(dir->mapping), name);
+        int server = giga_get_server_for_index(&(dir->mapping), index);
 
         if (server != skye_options.servernum){
             memcpy(bitmap, &dir->mapping, sizeof(dir->mapping));
+            cache_return(dir);
             return -EAGAIN;
         }
     }
-
-    int index = giga_get_index_for_file(&(dir->mapping), name);
-
-    cache_return(dir);
 
     char physical_path[MAX_LEN];
     snprintf(physical_path, MAX_LEN, "p%05d", index);
 
     PVFS_sysresp_lookup lk_response;
-    int ret;
 
     memset(&lk_response, 0, sizeof(lk_response));
-    ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, *handle,
+    int ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, *handle,
                               creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
-    if ( ret < 0 )
-        return -1 * PVFS_get_errno_mapping(ret);
+
+    ret =  -1 * PVFS_get_errno_mapping(ret);
 
     *handle = lk_response.ref;
 
-    return 0;
+    return ret;
 }
 
 static int isdir(PVFS_credentials *creds, PVFS_object_ref *handle)
@@ -155,17 +149,14 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         return true;
     }
 
-    int server = giga_get_server_for_file(&dir->mapping, (const char*)path);
+    int index = giga_get_index_for_file(&dir->mapping, (const char*)path);
+    int server = giga_get_server_for_index(&dir->mapping, index);
 
     if (server != skye_options.servernum){
         result->errnum = -EAGAIN;
         memcpy(&(result->skye_lookup_u.bitmap), &dir->mapping, sizeof(dir->mapping));
-        return true;
+        goto exit;
     }
-
-    int index = giga_get_index_for_file(&dir->mapping, (const char*)path);
-
-    cache_return(dir);
 
     char physical_path[MAX_LEN];
     snprintf(physical_path, MAX_LEN, "p%05d/%s", index, (const char*)path);
@@ -177,13 +168,13 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, parent,
                               &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
-    if ( ret < 0 ) {
-        result->errnum = -1 * PVFS_get_errno_mapping(ret);
-        return true;
-    }
 
+
+    result->errnum = -1 * PVFS_get_errno_mapping(ret);
     result->skye_lookup_u.ref = lk_response.ref;
-    result->errnum = 0;
+
+exit:
+    cache_return(dir);
 
     return true;;
 }
@@ -201,18 +192,14 @@ bool_t skye_rpc_partition_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         return true;
     }
 
-    int server = giga_get_server_for_file(&dir->mapping, (const char*)path);
+    int index = giga_get_index_for_file(&dir->mapping, (const char*)path);
+    int server = giga_get_server_for_index(&dir->mapping, index);
 
     if (server != skye_options.servernum){
         result->errnum = -EAGAIN;
         memcpy(&(result->skye_lookup_u.bitmap), &dir->mapping, sizeof(dir->mapping));
-        cache_return(dir);
-        return true;
+        goto exit;
     }
-
-    int index = giga_get_index_for_file(&dir->mapping, (const char*)path);
-
-    cache_return(dir);
 
     char physical_path[MAX_LEN];
     snprintf(physical_path, MAX_LEN, "p%05d/%s", index, (const char*)path);
@@ -224,9 +211,11 @@ bool_t skye_rpc_partition_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, parent,
                               &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
+
+
     if ( ret < 0 ) {
         result->errnum = -1 * PVFS_get_errno_mapping(ret);
-        return true;
+        goto exit;
     }
 
     /* so, the file exists, now we descend just into the bucket */
@@ -237,15 +226,15 @@ bool_t skye_rpc_partition_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, parent,
                               &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
-    if ( ret < 0 ) {
-        result->errnum = -1 * PVFS_get_errno_mapping(ret);
-        return true;
-    }
 
+
+    result->errnum = -1 * PVFS_get_errno_mapping(ret);
     result->skye_lookup_u.ref = lk_response.ref;
-    result->errnum = 0;
 
-    return true;;
+exit:
+    cache_return(dir);
+
+    return true;
 }
 
 static void perform_split(PVFS_object_ref parent, index_t pindex){
@@ -254,7 +243,10 @@ static void perform_split(PVFS_object_ref parent, index_t pindex){
     PVFS_object_ref phandle, chandle; /* child/logical directory handles */
     int ret;
 
-    struct skye_directory *dir = cache_fetch(&parent);
+    struct skye_directory *dir = cache_fetch_w(&parent);
+    if (!dir){
+        return;
+    }
 
     cindex = giga_index_for_splitting(&dir->mapping, pindex);
 
@@ -362,18 +354,22 @@ exit:
     cache_return(dir);
 }
 
-bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref logical_parent,
+bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
                              skye_pathname filename, mode_t mode, 
                              skye_lookup *result, struct svc_req *rqstp)
 {
     (void)rqstp;
     int rc;
 
-    PVFS_object_ref parent;
-    memcpy(&parent, &logical_parent, sizeof(parent));
+    struct skye_directory *dir = cache_fetch(&parent);
+    if (!dir){
+        result->errnum = -EIO;
+        return true;
+    }
 
-    if ((rc = enter_bucket(&creds, &parent, (char*)filename, &(result->skye_lookup_u.bitmap))) < 0){
+    if ((rc = enter_bucket(&creds, dir, (char*)filename, &parent, &(result->skye_lookup_u.bitmap))) < 0){
         result->errnum = rc;
+        cache_return(dir);
         return true;
     }
 
@@ -397,14 +393,17 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref logical_par
             result->errnum = -EACCES;
         else
             result->errnum = -1 * PVFS_get_errno_mapping(rc);
+        cache_return(dir);
         return true;
     }
 
+
     if (isdir_overflow(&creds, &parent) == 1) {
-        /* FIXME: having to refetch the directory isn't ideal */
-        struct skye_directory *dir = cache_fetch(&logical_parent);
         int index = giga_get_index_for_file(&dir->mapping, filename);
-        perform_split(logical_parent, index);
+        cache_return(dir);
+        // FIXME: queue this up, or spawn another thread
+        perform_split(dir->handle, index);
+    } else {
         cache_return(dir);
     }
 
@@ -421,11 +420,17 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     (void)rqstp;
     int rc;
 
-    if ((rc = enter_bucket(&creds, &parent, (char*)dirname, &(result->skye_result_u.bitmap))) < 0){
-        result->errnum = rc;
+    struct skye_directory *dir = cache_fetch(&parent);
+    if (!dir){
+        result->errnum = -EIO;
         return true;
     }
 
+    if ((rc = enter_bucket(&creds, dir, (char*)dirname, &parent, &(result->skye_result_u.bitmap))) < 0){
+        result->errnum = rc;
+        cache_return(dir);
+        return true;
+    }
 
     /* Set attributes */
     PVFS_sys_attr attr;
@@ -441,6 +446,7 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
     if (rc != 0){
         result->errnum = -1 * PVFS_get_errno_mapping(rc);
+        cache_return(dir);
         return true;
     }
 
@@ -454,8 +460,26 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     rc = pvfs_mkdir_server(&creds, &parent, dirname, &attr, server, NULL);
     result->errnum = rc;
 
+    cache_return(dir);
+
 	return true;
 }
+
+static int remove_bucket(PVFS_credentials *creds, struct skye_directory *dir, int index)
+{
+    char physical_path[MAX_LEN];
+    snprintf(physical_path, MAX_LEN, "p%05d", index);
+
+    int rc = PVFS_sys_remove(physical_path, dir->handle, creds, PVFS_HINT_NULL);
+    if ( rc < 0 ){
+        return  -1 * PVFS_get_errno_mapping(rc);
+    }
+
+    giga_update_mapping_remove(&dir->mapping, index);
+
+    return 0;
+}
+
 
 /* except the 0th bucket */
 static int remove_all_buckets(PVFS_credentials *creds, struct skye_directory *dir)
@@ -488,17 +512,25 @@ static int remove_all_buckets(PVFS_credentials *creds, struct skye_directory *di
             if (index == 0)
                 continue;
 
-            CLIENT *client = get_connection(giga_get_server_for_index(&dir->mapping, index));
+            int server = giga_get_server_for_index(&dir->mapping, index);
 
-            enum clnt_stat retval;
-            retval = skye_rpc_bucket_remove_1(*creds, *parent, index, &ret, client);
-            if (retval != RPC_SUCCESS){
-                clnt_perror(client, "RPC bucket remove failed");
-                return -EIO;
+            if (server == skye_options.servernum){
+                ret = remove_bucket(creds, dir, index);
+                if (ret)
+                    return ret;
+            } else {
+                CLIENT *client = get_connection(server);
+
+                enum clnt_stat retval;
+                retval = skye_rpc_bucket_remove_1(*creds, *parent, index, &ret, client);
+                if (retval != RPC_SUCCESS){
+                    clnt_perror(client, "RPC bucket remove failed");
+                    return -EIO;
+                }
+
+                if (ret != 0)
+                    return ret;
             }
-
-            if (ret != 0)
-                return ret;
         }
         
         if (!token)
@@ -523,9 +555,15 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     (void)rqstp;
     int rc;
 
-    if ((rc = enter_bucket(&creds, &parent, (char*)filename, &(result->skye_result_u.bitmap))) < 0){
-        result->errnum = rc;
+    struct skye_directory *dir = cache_fetch(&parent);
+    if (!dir){
+        result->errnum = -EIO;
         return true;
+    }
+
+    if ((rc = enter_bucket(&creds, dir, (char*)filename, &parent, &(result->skye_result_u.bitmap))) < 0){
+        result->errnum = rc;
+        goto exit;
     }
 
     PVFS_sysresp_lookup lk_response;
@@ -536,23 +574,22 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
                               PVFS_HINT_NULL);
     if ( rc < 0 ){
         result->errnum =  -1 * PVFS_get_errno_mapping(rc);
-        return true;
+        goto exit;
     }
 
     if (isdir(&creds, &lk_response.ref)){
-        struct skye_directory *dir = cache_fetch(&lk_response.ref);
+        cache_return(dir);
+        dir = cache_fetch_w(&lk_response.ref);
         rc = remove_all_buckets(&creds, dir);
         if ( rc < 0 ){
             result->errnum = rc;
-            cache_return(dir);
-            return true;
+            goto exit;
         }
 
         rc = PVFS_sys_remove("p00000", dir->handle, &creds, PVFS_HINT_NULL);
         if ( rc < 0 ){
             result->errnum = -1 * PVFS_get_errno_mapping(rc);
-            cache_return(dir);
-            return true;
+            goto exit;
         }
 
         /* FIXME: lock out access to the directory here */
@@ -571,15 +608,15 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     }
 
     rc = PVFS_sys_remove(filename, parent, &creds, PVFS_HINT_NULL);
+    result->errnum = -1 * PVFS_get_errno_mapping(rc);
 
-    if (rc != 0)
-        result->errnum = -1 * PVFS_get_errno_mapping(rc);
-    else
-        result->errnum = 0;
+exit:
+    cache_return(dir);
     
 	return true;
 }
 
+/* FIXME: what if we cause the destination bucket to overflow */
 bool_t skye_rpc_rename_1_svc(PVFS_credentials creds, 
                              skye_pathname src_name, PVFS_object_ref src_parent,
                              skye_pathname dst_name, PVFS_object_ref dst_parent,
@@ -588,22 +625,23 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
     (void)rqstp;
     int rc;
 
-    dbg_msg(stderr, "[%s] renaming #{%lu}/%s -> #{%lu}/%s", __func__, src_parent.handle, src_name, dst_parent.handle, dst_name);
+    struct skye_directory *dir = cache_fetch(&dst_parent);
+    if (!dir){
+        result->errnum = -EIO;
+        return true;
+    }
 
-    if ((rc = enter_bucket(&creds, &dst_parent, (char*)dst_name, &(result->skye_result_u.bitmap))) < 0){
+    if ((rc = enter_bucket(&creds, dir, (char*)dst_name, &dst_parent, &(result->skye_result_u.bitmap))) < 0){
         result->errnum = rc;
+        cache_return(dir);
         return true;
     }
 
     rc = PVFS_sys_rename(src_name, src_parent, dst_name, dst_parent,
                              &creds, PVFS_HINT_NULL);
-    if (rc != 0){
-        result->errnum = -1 * PVFS_get_errno_mapping(rc);
-        err_msg("[%s] Unable to rename file (%d).", __func__, result->errnum);
-    } else {
-        result->errnum = 0;
-    }
+    result->errnum = -1 * PVFS_get_errno_mapping(rc);
 
+    cache_return(dir);
 	return true;
 }
 
@@ -614,7 +652,7 @@ bool_t skye_rpc_bucket_add_1_svc(PVFS_object_ref handle, int index, int *result,
     (void)result;
     (void)rqstp;
 
-    struct skye_directory *dir = cache_fetch(&handle);
+    struct skye_directory *dir = cache_fetch_w(&handle);
 
     giga_update_mapping(&dir->mapping, index);
 
@@ -628,33 +666,20 @@ bool_t skye_rpc_bucket_remove_1_svc(PVFS_credentials creds,
                                     int index, int *result, 
                                     struct svc_req *rqstp)
 {
-    bool_t retval = true;
     (void)rqstp;
 
-
-    struct skye_directory *dir = cache_fetch(&handle);
+    struct skye_directory *dir = cache_fetch_w(&handle);
 
     if (!dir) {
         *result = -ENOMEM;
         return true;
     }
 
-    char physical_path[MAX_LEN];
-    snprintf(physical_path, MAX_LEN, "p%05d", index);
-
-    int rc = PVFS_sys_remove(physical_path, handle, &creds, PVFS_HINT_NULL);
-    if ( rc < 0 ){
-        *result = -1 * PVFS_get_errno_mapping(rc);
-        return true;
-    }
-
-    giga_update_mapping_remove(&dir->mapping, index);
+    *result = remove_bucket(&creds, dir, index);
 
     cache_return(dir);
 
-    *result = 0;
-
-    return retval;
+    return true;
 }
 
 /* TODO: What exactly am I supposed to do here? */
