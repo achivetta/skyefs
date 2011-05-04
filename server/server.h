@@ -5,7 +5,7 @@
 
 #define NUM_BACKLOG_CONN 128
 
-#define SPLIT_THRESHOLD 100
+#define SPLIT_THRESHOLD 1000
 
 /* FIXME: do we really need this? */
 struct server_settings {

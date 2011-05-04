@@ -206,37 +206,40 @@ static int pvfs_readdir(PVFS_credentials *credentials, PVFS_object_ref *ref, voi
     int ret;
     PVFS_sysresp_readdir rd_response;
     unsigned int pvfs_dirent_incount = 32; // reasonable chank size
-    PVFS_ds_position token = 0;
+    PVFS_ds_position token = PVFS_READDIR_START;
 
     do {
         char *cur_file = NULL;
         unsigned int i;
 
         memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
-        ret = PVFS_sys_readdir(*ref, (!token ? PVFS_READDIR_START : token),
+        ret = PVFS_sys_readdir(*ref, token,
                                 pvfs_dirent_incount, credentials, &rd_response,
                                 PVFS_HINT_NULL);
         if (ret < 0)
             return pvfs2errno(ret);
 
+        dbg_msg(stderr, "[%s] PVFS_sys_readdir(ref = %lu, token = %d, incount = %d) -> %d", __func__, 
+                ref->handle, token, pvfs_dirent_incount,
+                rd_response.pvfs_dirent_outcount);
+
         for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
             cur_file = rd_response.dirent_array[i].d_name;
 
-            if (filler(buf, cur_file, NULL, 0))
+            if (filler(buf, cur_file, NULL, 0)){
                 break;
+            }
         }
         
-        if (!token)
-            token = rd_response.pvfs_dirent_outcount - 1;
-        else
-            token += rd_response.pvfs_dirent_outcount;
+        //FIXME: use this incantation everywhere
+        token = rd_response.token;
 
         if (rd_response.pvfs_dirent_outcount) {
             free(rd_response.dirent_array);
             rd_response.dirent_array = NULL;
         }
 
-    } while(rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
+    } while (rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
 
     return 0;
 }
@@ -253,28 +256,37 @@ int skye_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t of
     if ( (ret = resolve(&credentials, path, &ref)) < 0 )
         return ret;
 
-    unsigned int pvfs_dirent_incount = 32; // reasonable chank size
-    PVFS_ds_position token = 0;
+    // FIXME UGLY HACK, why does the continuation here not work? Is it because
+    // we issue a different PVFS_readdir() in between?
+    unsigned int pvfs_dirent_incount = 256; // reasonable chank size
+    PVFS_ds_position token = PVFS_READDIR_START;
     PVFS_sysresp_readdir rd_response;
     do {
         unsigned int i;
 
         memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
-        ret = PVFS_sys_readdir(ref, (!token ? PVFS_READDIR_START : token),
-                               pvfs_dirent_incount, &credentials, &rd_response,
-                               PVFS_HINT_NULL);
+        ret = PVFS_sys_readdir(ref, token, pvfs_dirent_incount, &credentials,
+                               &rd_response, PVFS_HINT_NULL);
         if (ret < 0)
             return pvfs2errno(ret);
+
+        dbg_msg(stderr, "[%s] PVFS_sys_readdir(ref = %lu, token = %d, incount = %d) -> %d", __func__, 
+                ref.handle, token, pvfs_dirent_incount,
+                rd_response.pvfs_dirent_outcount);
 
         for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
             // FIXME: dirty hack to figure out what's a partition
             if (rd_response.dirent_array[i].d_name[0] != 'p')
                 continue;
+
+
             ref.handle = rd_response.dirent_array[i].handle; 
             // FIXME: error handleing
             pvfs_readdir(&credentials, &ref, buf, filler);
         }
-        token += rd_response.pvfs_dirent_outcount;
+
+
+        token = rd_response.token;
 
         if (rd_response.pvfs_dirent_outcount) {
             free(rd_response.dirent_array);
