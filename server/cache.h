@@ -6,8 +6,6 @@
 #include "common/giga_index.h"
 #include "common/uthash.h"
 
-#define SKYE_BUCKET_SPLITTING 0x1
-
 struct skye_directory {
     struct giga_mapping_t mapping;
     int refcount;

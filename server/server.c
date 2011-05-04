@@ -1,4 +1,5 @@
 #include "server.h"
+#include "split.h"
 #include "common/trace.h"
 #include "common/defaults.h"
 #include "common/skye_rpc.h"
@@ -32,7 +33,7 @@
 struct server_settings srv_settings;
 struct skye_options skye_options;
 
-static pthread_t listen_tid;
+static pthread_t listen_tid, split_tid;
 
 // FIXME: rpcgen should put this in giga_rpc.h, but it doesn't. Why?
 extern void skye_rpc_prog_1(struct svc_req *rqstp, register SVCXPRT *transp);
@@ -262,6 +263,13 @@ int main(int argc, char **argv)
     }
 
     server_socket(); 
+
+    if (pthread_create(&split_tid, NULL, split_thread, NULL) < 0){
+        err_dump("ERROR: during pthread_create() of split thread.");
+    } 
+    if (pthread_detach(split_tid) < 0){
+        err_msg("ERROR: unable to detach split thread().");
+    }
 
     /* FIXME: we sleep 5 seconds here to let the other servers startup.  This
      * mechanism needs to be replaced by an intelligent reconnection system.
