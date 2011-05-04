@@ -219,10 +219,6 @@ static int pvfs_readdir(PVFS_credentials *credentials, PVFS_object_ref *ref, voi
         if (ret < 0)
             return pvfs2errno(ret);
 
-        dbg_msg(stderr, "[%s] PVFS_sys_readdir(ref = %lu, token = %d, incount = %d) -> %d", __func__, 
-                ref->handle, token, pvfs_dirent_incount,
-                rd_response.pvfs_dirent_outcount);
-
         for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
             cur_file = rd_response.dirent_array[i].d_name;
 
@@ -269,10 +265,6 @@ int skye_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t of
                                &rd_response, PVFS_HINT_NULL);
         if (ret < 0)
             return pvfs2errno(ret);
-
-        dbg_msg(stderr, "[%s] PVFS_sys_readdir(ref = %lu, token = %d, incount = %d) -> %d", __func__, 
-                ref.handle, token, pvfs_dirent_incount,
-                rd_response.pvfs_dirent_outcount);
 
         for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
             // FIXME: dirty hack to figure out what's a partition
