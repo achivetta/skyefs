@@ -151,8 +151,57 @@ create operation, the skye_server thread issuing the create will lock a data
 structure for the directory so that the partition is prevented from splitting
 until the create can finish.
 
-Splitting
----------
+Metadata Persistence
+--------------------
+Closely related to the issue of physical layout is that of persisting SkyeFS
+metadata.  This includes the Giga+ mapping (the bitmap and zeroth server), the
+server list at the time of directory creation and the state of any splitting
+directories.  To make the system as fault tolerant as possible, we avoid
+explicitly storing any of this metadata whenever possible and instead
+interrogate the state of a directory in PVFS to determine these values.
+
+Rather than building into SkyeFS our own mechanism for maintenance of server
+lists we simply ask PVFS for the current server list on startup.  Tests indicate
+that PVFS will always return this in the same order.  In the event of a server
+addition the new servers are simply added to the end of the list.  As PVFS does
+not support the removal of servers, we do not need to provide support for that
+functionality.  Therefore, to determine the server list at the time of a
+directory creation we only need to know the numeber of servers that existed when
+the directory was created.
+
+When the server's read-through cache suffers a cache miss it must populate a new
+skye_directory with the necessary information.  It determines the 0th server by
+asking PVFS for the MDS responsible for the directory's PVFS handle.  It then
+performs a readdir() on the directory to find all existing partitions (folders
+with the 'p' prefix).  This also will reveal any currently splitting partitions
+(folders with the 's' prefix).  (TODO) If the server determines that it is
+responsible for completing an unfinished split it will enqueue the partition for
+completion by the split thread.  (TODO) It will then read an extended attribute
+from the directory that indicates the number of servers which existed when the
+directory was created.  This extended attribute is only ever written once, at
+the time the directory is created, so there is no risk of inconsistency.  All
+the other values similarly do not face any inconsistency risks as they are
+simply functions of the physical layout of the directory.
+
+On the client side we use a significantly simplified version of the cache
+population procedure to avoid hitting the PVFS servers.  When the read-through
+cache suffers a miss it will simply create a new object with a bitmap consisting
+of only the zeroth partition, a server list of length one and the zeroth server
+set to the owner of the directory's handle.  The merging semantics of Giga+
+mappings ensure that as the client receives updated mappings from the servers
+this initial mapping will tend toward accurate.
+
+This persistence scheme results in a system that can halt at almost any time
+without leaving the system in an inconsistent state.
+
+Splitting, and create()
+-----------------------
+
+The create() RPC is used by skye_client to create files in a given
+directory.  Just like with lookup() only the server that owns the correct
+partition for a file will service a create() call.  Quite simply, the create()
+RPC calls PVF_sys_create() with the appropriate parent handle.  The complex
+part is handling splitting during and after a create().
 
 Splitting of partitions is a critical and potentially tricky part of the Giga+
 algorithm.  In PVFS we are able to achieve a high degree of concurrency in the
@@ -232,15 +281,29 @@ both directories.  The splitting thread now sleeps and retries the bucket_add()
 RPC until it succeeds.  In this failure case, we intentionally avoid splitting
 new partitions to ensure that we don't create many new "orphaned partitions".
 
-We use a seperate splitting thread for this operation to ensure that splittings
-are entirely asynchronous.  One of the biggest benefits of this splitting scheme
-tis that file system operations are able to happen even while a partition is
-being split.  Using a seperate split thread ensures that operations threads can
-do the bare minimum amount of work during the create operation and instead leave
-other choices to 
+We use a separate splitting thread for this operation to ensure that splittings
+are entirely asynchronous.  As a result, file system operations are able to
+happen even while a partition is being split.  This can result in significantly
+improved performance over implementations that must block during a split.  The
+separate split thread also ensures that operations threads can do the bare
+minimum amount of work during the create operation and leave splitting for
+later.  We use only one splitting thread because we don't want to split two
+partitions at a time due to the potential for resource contention with other
+operations at the PVFS server.  In addition, this allows us to simplify our data
+structures for each directory significantly because we only have to note one
+splitting partition at a time.
 
-$why seperate thread
-$why rwlock
+mkdir()
+-------
+
+Our directory creation code extends create()'s locking and splitting
+functionality to handle a few directory creation issues.
+
+remove()
+--------
+
+rename()
+--------
 
 <section.4>
 ------------------
