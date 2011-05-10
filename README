@@ -1,1 +1,285 @@
 SkyeFS
+=======
+
+a FUSE filesystem providing distributed directories using Giga+ and
+PVFS.
+
+Overview
+--------
+
+PVFS stores all metadata for a particular directory on a single medatata server.
+As a result, PVFS performance on large or highly trafficed directories is
+poor. Giga+ is a scheme for distributing the metedata for a directory across a
+set of servers.  SkyeFS implements the giga+ algorithms on top of an unmodified
+PVFS file system.
+
+SkyeFS consists of a client (skye_clent) which functions as the FUSE filesystem
+and a server (skye_server) which provides synchronization for metadata
+operations and controlls directory placement and splitting.  
+
+Giga+ operates by splitting a directory into multiple partitions, which may or
+may not be on the same server, but act as distinct metadata stores.  Because in
+PVFS each directory stores all its metadata together on a single server, we
+represent each giga+ partition as a distinct PVFS directory.  A SkyeFS server
+running on each PVFS metadata server (MDS) provides the synchronization and
+coordination for the partitions on the local PVFS MDS.  
+
+Implementation Overview
+-----------------------
+
+We choose to implement Giga+ on top of PVFS instead of modifying PVFS itself in
+order to keep the implementation clean and simple.  FUSE provides a easy option
+for implementing the client-side of the system due to the ease of writing a FUSE
+file system driver.  Additionally, the pvfs2fuse application distributed with
+the PVFS source provides an example of how to implement FUSE operations in PVFS.
+Given these design choices, the following high-level design questions must be answered: 
+
+In PVFS, each object, both directories and files, are assigned a PVFS metadata
+handle.  Each MDS is assigned a range of handles for which it is
+responsible.  In the case of directories, the MDS responsible for a given
+directory's handle will contain all the directory entries for that directory.
+Therefore, we can achieve partitioning of files between servers by ensuring that
+the directory entries fall in directories whose handles are owned by different
+MDSs.  
+
+Physical Layout
+---------------
+
+Through testing and reading of the PVFS source code, we determined that moving
+a file between directories, either on the same or different MDS, results in only
+the directory entry being moved.  This results in a cheap movement operation
+between directories.  Therefore, we store each Giga+ partition in a distinct
+PVFS directory instead of putting all Giga+ partitions in one directory per
+server to keep directory size down.  We believe that the cost of having to
+sometimes split onto a local server is outweighed by the benefit of keeping
+total directory size down.
+
+Upon creation of a logical directory `foo` we create a PVFS directory of the
+same name.  Inside that PVFS directory, we create a PVFS directory for the first
+Giga+ partition called p00000.  The 'p' signifies that this is an active
+partition, while the 00000 provides the partition number.  When this partition
+splits, the directory p00001 will be created adjacent to it to store the files
+in the new partition.  This system gives rise to the invariant that every other
+directory in a PVFS path must be a partition of a logical directory.  For
+example, the path '/p00005/foo/p00001/bar' is a valid path, but
+'/p00003/foo/bar' is not.
+
+The location for a new PVFS directory is determined by the PVFS client using
+round robin assignment, however currently there is no way to influence this
+decision To avoid requiring a modified PVFS client, we have implemented an
+initial naive solution to controlling the placement by simply removing and
+recreating a directory until it is placed by the PVFS client on the correct
+server.  (TODO) Future improvements to the code could improve the efficiency of
+this code by caching the created directories, either in a per-directory or
+per-filesystem manor.  
+
+In the per-directory case, when an unneeded directory is created the system
+renames the directory from `p$n$` to `u$m$` where $m$ is the first partition
+that does not yet exist but will be placed on the server on which the directory
+was created.  Prior to creating a directory for partition $n$, the system will
+check for the existence of `u$n$` and rename it to `p$n` if found.
+
+In the per-filesystem case a global scratch directory is maintained in which
+unused directories are placed.  Prior to creation of a new partition, this
+directory is searched for a directory on the correct server.  This has the
+advantage of leaving fewer unused directories on the file system but in systems
+with a high rate of splits could create a directory with a high rate of
+concurrent activity.
+
+Path Translation
+----------------
+
+Given this layout, we must determine how clients are to translate logical
+pathnames to their respective PVFS objects.  The PVFS system interface uses PVFS
+handles to specify operands for most filesystem operations.  PVFS provides
+PVFS_sys_lookup(path) and PVFS_sys_ref_lookup(parent handle, name) to translate
+either an absolute or relative path to a PVFS handle.  We implement our own
+lookup(parent handle, name) that resolves one logical path component.  For
+example, calling lookup(NULL, "foo") would return the PVFS handle of
+"/p00004/foo" if foo was stored in the fifth partition of the filesystem root.
+If we let that handle be $h$, then calling lookup($h$, "bar") would return the
+PVFS handle of "/p00004/foo/p00002/bar" if bar is in the third partition of foo.
+In this manor, any arbitrary logical path can be resolved into its PVFS handle
+in a manor opaque to the caller.  For convenience, we provide a resolve(path)
+that iterates through the provided path calling lookup() at each step.
+
+PVFS metadata handles do not change when their objects are moved between
+directories.  Therefore, the handle returned by lookup is guaranteed to continue
+to be a valid reference to the object for the duration of the object's
+existence.  This is true even if the partition holding an object splits or the
+logical directory is moved elsewhere in the directory tree.  As a result, we can
+safely hold a PVFS handle for the duration of a FUSE operation or between calls
+to open() and close() without having to check its validity.
+
+Client/Server Architecture
+--------------------------
+
+lookup() needs to be able to determine the partition in which a object should
+live before it can issue the appropriate PVFS_sys_lookup() call to determine
+that object's handle, if it exists.  For this to be done quickly, and with a
+minimum of PVFS calls, we use a skye_server process to maintain in RAM an
+authorative bitmap representing the state of a directory.  The skye_server
+process runs on each PVFS MDS and is responsible for cordinating access to the
+partitions living on that MDS.  It implements a handful for ONC RPC calls,
+including lookup(), that are used by the skye_client to operate in or on the
+partitions handled by that server.  In the case of lookup(), the server consults
+its mapping and issues a PVFS lookup for a rewritten path including the
+partition of the object.
+
+The mapping between hash values and partitions/servers is determined by the
+values in a giga_mapping struct.  Both the client and server maintain
+read-through caches for these structures.  In the event of a cache miss, the
+system will interrogate PVFS for appropriate initial data.
+
+For performance and load-balance considerations, locality between the
+skye_server process and the PVFS server to which it is making requests is very
+important.  Each RPC response contains an error number.  Upon receiving a RPC
+request, the server will determine if it owns the partition on which the request
+will operate.  If not, the server will return EAGAIN as the error number and
+provide the client with a copy of its own mapping information.
+Upon receiving this error code, the client will read the server provided mapping
+information and merge that information with its local version of the mapping.
+The client will then reattempt the RPC call to a new skye_server as determined
+by the updated mapping.  This ensures both that locality as maintained and that
+the client's cached mapping will tend toward reality.
+
+The skye_server process as also used to prevent a variety of race conditions.
+By forwarding all operations that operate on a file path or name, as opposed to
+only a PVFS handle, to the skye_server we ensure that splitting does not
+interfere with successful execution of thees commands.  For example, during a
+create operation, the skye_server thread issuing the create will lock a data
+structure for the directory so that the partition is prevented from splitting
+until the create can finish.
+
+Splitting
+---------
+
+Splitting of partitions is a critical and potentially tricky part of the Giga+
+algorithm.  In PVFS we are able to achieve a high degree of concurrency in the
+face of splitting thanks to the stability of PVFS file handles and the rename
+semantics.
+
+Each logical directory is provided a struct skye_directory on the server.  This
+structure is defined approximately as follows:
+
+<code>
+struct skye_directory {
+    giga_mapping mapping;
+    int reference_count;
+    PVFS_object_ref PVFS_handle;
+    int splitting_index;
+    pthread_rwlock_t rwlock;
+    UT_hash_handle hashtable_handle;
+};
+</code>
+
+During normal operation, when no splits are happening, splitting_index has the
+value of -1.  When an operation needs to access the directory, it acquires a
+read lock on the rwlock for the duration of the operation.  By holding the
+rwlock, the operation can be assured that no partition will begin to split until
+the lock is released.
+
+At the end of the create() call, a stat() operation is performed on the
+partition and the number of directory entries in the partition is compared to
+the system's split threshold.  If the current directory size is greater, the
+PVFS handle of the parent and the partition number are stored at the end of a
+queue of partitions to split.  The create() call then returns as normal.
+
+Each skye_server has a dedicated splitter thread.  This thread waits on a
+condition variable associated with the split queue.  When an operation adds a
+entry to the queue it signals on the condition variable to wake up the splitting
+thread.  The splitting thread iterates through the queue and splits all
+specified partitions which are found to still be over the splitting threshold.
+
+To split a partition, the splitting thread first acquires a write lock n the
+directory.  This ensures that all operations currently outstanding on the
+directory are finished before the lock is acquired and that no new operations
+may begin.  (TODO) The splitting thread then creates the destination partition using a
+'s' prefix instead of a 'p' prefix in order to indicate, in the event of system
+failures, that a partition is still in the process of splitting. It also sets
+the splitting_index field to be the index of the splitting partition.  The
+splitting thread then unlocks the directory to allow operations to continue.
+
+The splitting thread performs a readdir() operation on the partition to be
+split.  For each entry, it hashes the name to determine if the object is to be
+moved to the new partition and then executes the move, using the PVFS rename()
+operation, if necessary.
+
+While this is happening, any thread that accesses the directory will notice that
+splitting_index is not set to -1.  For creation operations, the correct
+post-split partition will automatically be used ensuring that the new object
+will end up in the correct partition.  For access operations such as lookup(),
+first the old directory will be checked and if the object is not found there the
+new directory will be checked.  The PVFS rename() operation ensures that a
+renamed file is always visible in at least one of the source or destination
+directories.  Therefore, this technique is guaranteed to always find the object 
+if it exists.  The rwlock is necessairy for this technique to work because the
+operating thread must know for certain that the partition it needs did not split
+during the operation.  If the operation simply checked the bitmap at the end of
+the operation it would be able to retry but this could lead to a situation where
+an operation would be forced to retry many times, essentially starving
+operations on the directory.
+
+Upon completion of the split, the splitting thread reacquires a writer lock on
+the directory.  It renames the directory to begin with the prefix 'p' instead of
+'s' and  then sends a bucket_add() RPC to the server responsible for the new
+partition.  Upon positive reply the server updates its copy of the bitmap, sets
+the splitting_index back to -1 and unlocks the rwlock.  (TODO) In the event that
+a positive reply is not provided by the destination server, the source server
+may still provide service to that partition by leaving the splitting_index set
+and not updating the bitmap.  This will force operations to continue to check
+both directories.  The splitting thread now sleeps and retries the bucket_add()
+RPC until it succeeds.  In this failure case, we intentionally avoid splitting
+new partitions to ensure that we don't create many new "orphaned partitions".
+
+We use a seperate splitting thread for this operation to ensure that splittings
+are entirely asynchronous.  One of the biggest benefits of this splitting scheme
+tis that file system operations are able to happen even while a partition is
+being split.  Using a seperate split thread ensures that operations threads can
+do the bare minimum amount of work during the create operation and instead leave
+other choices to 
+
+$why seperate thread
+$why rwlock
+
+<section.4>
+------------------
+TITLE: Other operational issues
+
+Initial Lookup: 
+  - When a client knows nothing about a particular logical directory, it must
+    make a guess for which server to contact.  
+  - Always selecting the 0th server ensures that the contacted server will know
+    some information about the directory in question, however can result in
+    unbalanced load.  
+  - Picking a server at random does not guarantee that the chosen server will be
+    able to provide useful information.
+
+Recursive Lookup: 
+  - For ideal load balancing, each directory in the hierarchy should be located
+    on a different server.  
+  - However, this prevents the system from descending multiple steps in the path
+    during a single lookup.  
+  - It would be beneficial in the event of deep directory structures to cluster
+    directories on the same server to limit the number of RPCs required to
+    complete the lookup.
+
+Server Addition: 
+  - The Giga+ algorithm defines a method for the addition of new
+    servers to a cluster.  
+  - PVFS also allows addition of servers, but does not support migration of
+    existing data or metadata.  
+  - The addition of SkyeFS on top of PVFS can assist in the automatic migration
+    of metadata to new servers by splitting overfull partitions as per the Giga+
+    algorithm.
+
+Fault Tolerence: 
+  - As a user of PVFS, SkyeFS inherits PVFS's fault tolerence properties.  
+  - To ensure that SkyeFS does not introduce additional failure cases
+    we store a absolute minimum of metadata as extended attributes on
+    directories.
+  - The bitmap for a directory can be determined by listing the partitions that
+    exist and the zeroth server can be determined by examining the PVFS handle
+    of the directory.
+  - These techniques minimize, and in most cases eliminate, the risk of leaving
+    the SkyeFS filesystem in an inconsistent state.
