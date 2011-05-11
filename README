@@ -24,6 +24,11 @@ represent each giga+ partition as a distinct PVFS directory.  A SkyeFS server
 running on each PVFS metadata server (MDS) provides the synchronization and
 coordination for the partitions on the local PVFS MDS.  
 
+This paper presents the design and implementation decisions behind SkyeFS and
+their rational.  When appropriate, we also indicate places where future work is
+needed.  It is our hope that the design decisions made here may help inform
+future implementations of Giga+ or other systems on top of PVFS.
+
 Implementation Overview
 -----------------------
 
@@ -149,7 +154,10 @@ only a PVFS handle, to the skye_server we ensure that splitting does not
 interfere with successful execution of thees commands.  For example, during a
 create operation, the skye_server thread issuing the create will lock a data
 structure for the directory so that the partition is prevented from splitting
-until the create can finish.
+until the create can finish.  However, while simply forwarding all the work of
+potentially conflicting operations to a skye_server would be an easy solution to
+concurrency problems, we attempt to offload the absolute minimum amount of work
+on the skye_server to ensure that it does not become a bottleneck.
 
 Metadata Persistence
 --------------------
@@ -190,6 +198,18 @@ of only the zeroth partition, a server list of length one and the zeroth server
 set to the owner of the directory's handle.  The merging semantics of Giga+
 mappings ensure that as the client receives updated mappings from the servers
 this initial mapping will tend toward accurate.
+
+Populating the initial mapping in this way causes the lookup() code to always
+start with the zeroth server in the cache-cold state.  While this ensures that
+some progress towards finding the correct server as always made, it has the
+potential to cause unbalanced load on servers which act as the zeroth server for
+popular directories.  One potential solution to this problem is to provide
+bootstrapping hints to clients during the iterative lookup() process. In
+specific, when a client performs a lookup() and the server detects that the
+object is a directory the server should also return any cached bitmap it may
+have for that directory to the client to populate its cache.  This would also
+improve the performance of cache-cold and cache-warm lookups by reducing the
+number of servers a client must contact before it reaches the correct server. 
 
 This persistence scheme results in a system that can halt at almost any time
 without leaving the system in an inconsistent state.
@@ -271,7 +291,7 @@ operations on the directory.
 
 Upon completion of the split, the splitting thread reacquires a writer lock on
 the directory.  It renames the directory to begin with the prefix 'p' instead of
-'s' and  then sends a bucket_add() RPC to the server responsible for the new
+'s' and then sends a bucket_add() RPC to the server responsible for the new
 partition.  Upon positive reply the server updates its copy of the bitmap, sets
 the splitting_index back to -1 and unlocks the rwlock.  (TODO) In the event that
 a positive reply is not provided by the destination server, the source server
@@ -297,52 +317,161 @@ mkdir()
 -------
 
 Our directory creation code extends create()'s locking and splitting
-functionality to handle a few directory creation issues.
+functionality to handle a few directory creation issues.  Instead of using
+PVFS_sys_create() to create a file, the PVFS_sys_mkdir() call is used to create
+tho logical directory.  The server on which that directory was created is
+determined by the handle of the new directory and a new subdirectory "p00000" is
+created for the first partition on the same server.  This ensures that the
+zeroth server can be determined by looking at the logical directory's handle in
+addition to the first partition's handle.  The handle of the newly created
+directory is then passed back to the client.
+
+When the client first attempts to access the new directory it will contact the
+zeroth server for that directory as part of the cache population process.  That
+server will also undergo the cache population process and find that it owns the
+zeroth partition of that directory.  From the perspective of the destination
+directory, the creation of a new directory is indistinguishable from the first
+(cache cold) access of an existing, empty directory.
+
+(TODO) Should the server doing directory creation fail between the creation of
+the logical directory and the first partition an inconsistent state will be
+left.  In the event that such a directory is encountered by the server it can
+simply delete the directory to return to a consistent state.  This check could
+be implemented as part of a fsck process.
 
 remove()
 --------
 
+The remove operation for a file is a relatively simple operation.  We use the
+same logic as the lookup() operation for finding a file in a partition and then
+simply issue a PVFS_sys_remove() for that object.
+
+Directories are another story.  The remove operation on a directory must fail if
+there exists any files in the directory otherwise remove the directory.  This
+means that we need to be able to remove the directory atomically from the
+perspective of the user and ensure that any concurrent create() operations
+either fail or cause the remove() to fail.
+
+To coordinate removal of a directory, we implement a server to server RPC call
+called bucket_remove().  The client attempting to remove a directory will send a
+remove() RPC to the server holding the directory entry for the directory.  The
+server will then issue a bucket_remove() RPC for each bucket in descending order
+(i.e. the highest numbered bucket first).  
+
+When a server receives this call it will attempt to remove the specified
+partition by issuing a PVFS_sys_remove() for the directory.  If the operation
+succeeds then the partition will be removed from the owner's bitmap and the
+owner will return a positive response to the caller.  The caller will also
+remove the partition from its bitmap and then issue the next bucket_remove().
+
+If the PVFS_sys_remove() fails (for any reason other than ENOENT) the partition
+will remain in the bitmap and a negative response will be returned to the
+server.  The coordinating server will then halt the operation and return an
+error to the client.  In this case care must be taken to ensure that the system
+is left in a consistent state.  By removing the partitions in descending order
+we ensure that we always remove the parent of a split before its child.
+Therefore, each intermediate bitmap (produced between bucket_remove() calls) is
+a valid bitmap in itself.
+
+We also need some mechanism to update client bitmaps to remove the now missing
+partitions.  (TODO) The merge operation performed by the client does a logical
+OR of the old and new bitmaps making it unable to handle a removal.  Instead, we
+rely on a failsafe, "something is wrong" mechanism.  If a client receives an
+EAGAIN from a server but merging the bitmaps does not add any new partitions,
+the client will assume that something was removed and simply replace its bitmap
+with the server provided one.
+
 rename()
 --------
 
-<section.4>
-------------------
-TITLE: Other operational issues
+The rename operation presents a challenge because it must operate on two distinct
+objects that may not be located on the same server.  To solve this we use an
+optimistic retry strategy.  First, the client uses lookup() to determine the
+handle of the destination directory.  The skye_server implements a partition()
+RPC call that is similar to lookup() but instead of returning the handle of the
+requested object it returns the handle of the encompassing partition.  The
+client executing a rename() usees the partition() RPC to determine the handle of
+the source directory.  These two handles and the source and destination file
+names are passed to the destination partition's skye_server.  The skye_server
+will attempt to move the file using the provided source handle and name into the
+correct destination partition.  
 
-Initial Lookup: 
-  - When a client knows nothing about a particular logical directory, it must
-    make a guess for which server to contact.  
-  - Always selecting the 0th server ensures that the contacted server will know
-    some information about the directory in question, however can result in
-    unbalanced load.  
-  - Picking a server at random does not guarantee that the chosen server will be
-    able to provide useful information.
+In the event that a split has happened and the source partition has change, the
+rename will return an ENOENT which will then be passed back to the client.  In
+this case, the client will retry the rename with a new handle by making the
+partition() call again.  This retry process will continue until either the
+partition() call returns ENOENT or the rename succeeds.  
 
-Recursive Lookup: 
-  - For ideal load balancing, each directory in the hierarchy should be located
-    on a different server.  
-  - However, this prevents the system from descending multiple steps in the path
-    during a single lookup.  
-  - It would be beneficial in the event of deep directory structures to cluster
-    directories on the same server to limit the number of RPCs required to
-    complete the lookup.
+This technique eliminates the need for any locks to be held across multiple RPC
+calls but is vulnerable to starvation in the event of high rates of splitting.
+We believe this this risk of starvation is unlikely to occur in practice due to
+the speed at which a split can progress.
 
-Server Addition: 
-  - The Giga+ algorithm defines a method for the addition of new
-    servers to a cluster.  
-  - PVFS also allows addition of servers, but does not support migration of
-    existing data or metadata.  
-  - The addition of SkyeFS on top of PVFS can assist in the automatic migration
-    of metadata to new servers by splitting overfull partitions as per the Giga+
-    algorithm.
+Multi-step Lookup 
+----------------
 
-Fault Tolerence: 
-  - As a user of PVFS, SkyeFS inherits PVFS's fault tolerence properties.  
-  - To ensure that SkyeFS does not introduce additional failure cases
-    we store a absolute minimum of metadata as extended attributes on
-    directories.
-  - The bitmap for a directory can be determined by listing the partitions that
-    exist and the zeroth server can be determined by examining the PVFS handle
-    of the directory.
-  - These techniques minimize, and in most cases eliminate, the risk of leaving
-    the SkyeFS filesystem in an inconsistent state.
+In the current system, a lookup() call can only descend one step in a path
+traversal.  Future work could extend the operation to provide the entire path
+tho the skye_server and allow the server to descend as many directories in the
+path as it owns.  This would be of limited value in the current system where the
+servers for a parent and child directory are chosen independently.  At the cost
+of load balancing, parent and child directories could be placed on the same
+server more often than chance to allow this mechanism to speed directory lookups
+in more cases.  One example scheme to achieve this would be to place all new
+directories on the same server as their parent.  When a directory splits the
+first time the zeroth server would be moved to a new server chosen at random.
+This would have the effect of keeping strings of small (and likely low-traffic)
+directories on the same server while still ensuring that large directories are
+load-balanced.
+
+Server Addition 
+---------------
+PVFS includes very limited support for server addition.  While new servers can
+be added to the configuration file for a filesystem and brought online they must
+take a previously unoccupied part of the handle space and there exists no
+mechanism for automatically migrating either data or metadata to the new server.
+The current SkyeFS implementation includes no specific provisions for addition
+of servers, however future work could use SkyeFS to support the migration of
+some data to new PVFS MDS.  In particular, by splitting overfull but already
+load-balanced directories to these new servers some load can be moved to the
+servers in already existing directories.  (TODO) Because SkyeFS stores the
+number of servers existing at the time of creation in each directory as an
+extended attribute of that directory, no specific mechanism is needed to add a
+new server other than adding the server to the PVFS cluster and restarting all
+skye_server processes.  However, this mechanism is untested.
+
+Fault Tolerance 
+---------------
+PVFS is not a redundant file system and so it has very limited support for fault
+tolerant or highly available configurations.  As a result, we do not make any
+attempts to provide redundant services or fall over support in the case of
+failures.  We assume that skye_server processes and the PVFS servers fail
+together and that any failure will render the system unusable until resolved by
+restaring the system.
+
+However, we do make every effort to leave the system in a usable state at all
+times should any component fail.  Any skye process can fail at any time and the
+resulting state will be repaired transparently upon restart.  This is primarily
+due to the lack of additional SkyeFS metedata that is required on top of the
+PVFS file system.  By carefully controlling the sequence of actions we take on
+the PVFS file system we are able to ensure that any state of PVFS is
+recognizable as either complete or the result of an unfinished action which can
+then be resumed or aborted.
+
+Client and Server Thread Models
+-------------------------------
+
+Conclusion and Take Aways
+-------------------------
+We've described the design and implementation of the SkyeFS system.  The
+following key design decisions were crucial to the success of the design.
+
+  - Minimization of work on the server by passing file handles back to the
+    client for non-conflicting operations
+
+  - Avoidance of cross-RPC locks by either optimistic with retry strategies (in
+    the case of rename) or splitting operations into smaller atomic pieces (in
+    the case of remove).
+
+  - Prevention of inconsistency issues by limiting amount of additional metadata
+    stored.
