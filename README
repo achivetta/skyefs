@@ -49,7 +49,6 @@ MDSs.
 
 Physical Layout
 ---------------
-
 Through testing and reading of the PVFS source code, we determined that moving
 a file between directories, either on the same or different MDS, results in only
 the directory entry being moved.  This results in a cheap movement operation
@@ -93,7 +92,6 @@ concurrent activity.
 
 Path Translation
 ----------------
-
 Given this layout, we must determine how clients are to translate logical
 pathnames to their respective PVFS objects.  The PVFS system interface uses PVFS
 handles to specify operands for most filesystem operations.  PVFS provides
@@ -118,7 +116,6 @@ to open() and close() without having to check its validity.
 
 Client/Server Architecture
 --------------------------
-
 lookup() needs to be able to determine the partition in which a object should
 live before it can issue the appropriate PVFS_sys_lookup() call to determine
 that object's handle, if it exists.  For this to be done quickly, and with a
@@ -216,7 +213,6 @@ without leaving the system in an inconsistent state.
 
 Splitting, and create()
 -----------------------
-
 The create() RPC is used by skye_client to create files in a given
 directory.  Just like with lookup() only the server that owns the correct
 partition for a file will service a create() call.  Quite simply, the create()
@@ -315,7 +311,6 @@ splitting partition at a time.
 
 mkdir()
 -------
-
 Our directory creation code extends create()'s locking and splitting
 functionality to handle a few directory creation issues.  Instead of using
 PVFS_sys_create() to create a file, the PVFS_sys_mkdir() call is used to create
@@ -341,7 +336,6 @@ be implemented as part of a fsck process.
 
 remove()
 --------
-
 The remove operation for a file is a relatively simple operation.  We use the
 same logic as the lookup() operation for finding a file in a partition and then
 simply issue a PVFS_sys_remove() for that object.
@@ -383,7 +377,6 @@ with the server provided one.
 
 rename()
 --------
-
 The rename operation presents a challenge because it must operate on two distinct
 objects that may not be located on the same server.  To solve this we use an
 optimistic retry strategy.  First, the client uses lookup() to determine the
@@ -407,9 +400,17 @@ calls but is vulnerable to starvation in the event of high rates of splitting.
 We believe this this risk of starvation is unlikely to occur in practice due to
 the speed at which a split can progress.
 
+Other Operations
+----------------
+All other operations are relatively straightforward modifications of their
+PVFS2FUSE counterparts with the PVFS lookup() operation replaced by our own
+version.  This includes both data operations such as read() and write() as well
+as metadata operations like stat() and chmod().  Because we resolve all objects
+to stable PVFS handles inside their Giga+ partitions, these operations can
+proceed on the client without concern for future splitting.
+
 Multi-step Lookup 
 ----------------
-
 In the current system, a lookup() call can only descend one step in a path
 traversal.  Future work could extend the operation to provide the entire path
 tho the skye_server and allow the server to descend as many directories in the
@@ -460,6 +461,18 @@ then be resumed or aborted.
 
 Client and Server Thread Models
 -------------------------------
+Our current threading model for the skye_server is based on the initial Giga+
+prototype system in which a new thread is spawned for each connecting client.
+When large numbers of clients are active this has the potential to be a
+performance issue.  Other architectures for the server should be considered. 
+
+On the skye_client side we currently single thread the FUSE process causing all
+operations to be serialized.  This is necessary because our initial tests
+showed that the PVFS has the potential to stall when many requests using the
+synchronous operations are in flight.  The recommendation from PVFS developers is
+to switch to the low level FUSE interface and the asynchronous version of PVFS
+operations.
+
 
 Conclusion and Take Aways
 -------------------------
