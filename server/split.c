@@ -45,7 +45,9 @@ void * split_thread(void * unused){
             struct split_task *task = queue;
             DL_DELETE(queue, task);
 
+            pthread_mutex_unlock(&queue_mutex);
             do_split(task->parent, task->pindex);
+            pthread_mutex_lock(&queue_mutex);
 
             free(task);
         }
@@ -69,11 +71,11 @@ void perform_split(PVFS_object_ref *parent, index_t pindex){
 
     DL_APPEND(queue, task);
 
-    ret = pthread_mutex_unlock(&queue_mutex);
-    if (ret) err_dump("unable to unlock queue_mutex");
-
     ret = pthread_cond_signal(&queue_cond);
     if (ret) err_dump("unable to signal queue_cond");
+
+    ret = pthread_mutex_unlock(&queue_mutex);
+    if (ret) err_dump("unable to unlock queue_mutex");
 }
 
 static void do_split(PVFS_object_ref parent, index_t pindex){

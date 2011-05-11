@@ -6,12 +6,30 @@
 #include "common/giga_index.h"
 #include "common/uthash.h"
 
+/** Contains the metadata for a logical directory. */
 struct skye_directory {
+    /** The Giga+ mapping. */
     struct giga_mapping_t mapping;
+
+    /** A reference count */
     int refcount;
-    PVFS_object_ref handle;         // key for the hash table
-    int splitting_index; // -1 if none splitting
+
+    /** The PVFS handle for the logical directory.
+     * This is also used as the key for the hash table. */
+    PVFS_object_ref handle;
+
+    /** The index for the currently splitting partition.
+     * -1 if no partition is currently splitting. */
+    int splitting_index;
+
+    /* A reader/writer lock for the structure.  
+     *
+     * This lock is taken in reader mode by threads operating inside the
+     * directory.  It is taken in writer mode at the start and end of split
+     * operations. */
     pthread_rwlock_t rwlock;
+
+    /* The hashtable handle */
     UT_hash_handle hh;
 };
 
