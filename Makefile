@@ -29,5 +29,8 @@ tags : force_look
 git-ignored :
 	git ls-files --others -i --exclude-standard
 
+deploy :
+	rsync -r --exclude .git --delete ./ oc:skyefs
+
 force_look :
 	@true

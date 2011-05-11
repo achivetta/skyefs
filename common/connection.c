@@ -13,6 +13,7 @@
 #include <netdb.h>
 #include <fuse/fuse.h>
 #include <unistd.h>
+#include <string.h>
 
 static CLIENT **rpc_clients;
 struct PVFS_sys_mntent pvfs_mntent;

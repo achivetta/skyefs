@@ -30,6 +30,8 @@
 #include <pvfs2-sysint.h>
 #include <pvfs2-debug.h>
 
+extern SVCXPRT *svcfd_create (int __sock, u_int __sendsize, u_int __recvsize);
+
 struct server_settings srv_settings;
 struct skye_options skye_options;
 
@@ -271,11 +273,12 @@ int main(int argc, char **argv)
         err_msg("ERROR: unable to detach split thread().");
     }
 
-    /* FIXME: we sleep 5 seconds here to let the other servers startup.  This
+    /* FIXME: we sleep 15 seconds here to let the other servers startup.  This
      * mechanism needs to be replaced by an intelligent reconnection system.
      */
-    sleep(5);
-    rpc_connect();
+    sleep(15);
+    if (rpc_connect())
+        err_quit("Unable to make RPC connections, quitting.");
 
     dbg_msg(stderr, "[%s] Server %d online!", __func__, skye_options.servernum);
 

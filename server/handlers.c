@@ -212,6 +212,9 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     (void)rqstp;
     int rc;
 
+    time_t starttime, endtime;
+    starttime = time(NULL);
+
     struct skye_directory *dir = cache_fetch(&parent);
     if (!dir){
         result->errnum = -EIO;
@@ -257,6 +260,12 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
     result->errnum = 0;
     result->skye_lookup_u.ref = resp_create.ref;
+
+    starttime = time(NULL);
+    endtime = time(NULL);
+    double elapsedtime = difftime(starttime, endtime);
+
+    dbg_msg(log_fp, "[%s] created %lu/%s in %lf", __func__, parent.handle, filename, elapsedtime);
 
     return true;
 }
