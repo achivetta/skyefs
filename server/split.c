@@ -57,6 +57,8 @@ void * split_thread(void * unused){
 }
 
 void perform_split(PVFS_object_ref *parent, index_t pindex){
+    dbg_msg(stderr, "[%s] enqueueing split of %lu/%d", __func__, parent->handle, pindex);
+
     struct split_task *task = malloc(sizeof(struct split_task));
     if (!task)
         return;
@@ -84,7 +86,7 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
     PVFS_object_ref phandle, chandle; /* child/logical directory handles */
     int ret;
 
-    dbg_msg(stderr, "[%s] splitting %lu/%d", __func__, parent.handle, pindex);
+    dbg_msg(stderr, "[%s] START splitting %lu/%d", __func__, parent.handle, pindex);
 
     struct skye_directory *dir = cache_fetch_w(&parent);
     if (!dir){
@@ -203,6 +205,8 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
 
     dir->splitting_index = -1;
     giga_update_mapping(&dir->mapping, cindex);
+
+    dbg_msg(stderr, "[%s] DONE splitting %lu/%d", __func__, parent.handle, pindex);
 
 exit:
     if (dir)

@@ -218,6 +218,43 @@ static void server_socket()
     setup_listener(listen_fd);
 }
 
+static void create_root_partition(void)
+{
+    PVFS_credentials creds; PVFS_util_gen_credentials(&creds);
+
+    PVFS_sysresp_lookup lk_response;
+    int ret;
+
+    memset(&lk_response, 0, sizeof(lk_response));
+
+    ret = PVFS_sys_lookup(pvfs_fsid, (char *)"/p00000", &creds, &lk_response,
+                          PVFS2_LOOKUP_LINK_NO_FOLLOW, PVFS_HINT_NULL);
+    if ( ret == 0 )
+        return;
+    if ( PVFS_get_errno_mapping(ret) != ENOENT )
+        err_quit("[%s] Unable to confirm existance of /p00000, error %d", __func__, PVFS_get_errno_mapping(ret));
+
+    ret = PVFS_sys_lookup(pvfs_fsid, (char *)"/", &creds, &lk_response,
+                          PVFS2_LOOKUP_LINK_NO_FOLLOW, PVFS_HINT_NULL);
+    if (ret)
+        err_quit("[%s] Unable to get root handle, error %d", __func__, PVFS_get_errno_mapping(ret));
+
+    /* FIXME */
+    PVFS_sys_attr attr;
+    memset(&attr, 0, sizeof(PVFS_sys_attr));
+    attr.owner = creds.uid;
+    attr.group = creds.gid;
+    attr.perms = 0777;
+    attr.mask = PVFS_ATTR_SYS_ALL_SETABLE;
+
+    ret = pvfs_mkdir_server(&creds, &lk_response.ref, "p00000", &attr, pvfs_get_mds(&lk_response.ref), NULL);
+
+    if (ret)
+        err_quit("[%s] Unable to root's zeroth partition, error %d", __func__, PVFS_get_errno_mapping(ret));
+
+    return;
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 2) {
@@ -263,6 +300,9 @@ int main(int argc, char **argv)
     if (skye_options.servernum == -1){
         err_quit("ERROR: server hostname does not match any server in PVFS server list.");
     }
+
+    if (skye_options.servernum == 0)
+        create_root_partition();
 
     server_socket(); 
 

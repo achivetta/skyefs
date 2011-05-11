@@ -261,7 +261,6 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     result->errnum = 0;
     result->skye_lookup_u.ref = resp_create.ref;
 
-    starttime = time(NULL);
     endtime = time(NULL);
     double elapsedtime = difftime(starttime, endtime);
 
