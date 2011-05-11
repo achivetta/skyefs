@@ -18,20 +18,20 @@ Gibson}
 \maketitle
 
 \section{Overview}
-PVFS stores all metadata for a particular directory on a single medatata server.
-As a result, PVFS performance on large or highly trafficed directories is
-poor. Giga+ is a scheme for distributing the metedata for a directory across a
-set of servers.  SkyeFS implements the giga+ algorithms on top of an unmodified
+PVFS stores all metadata for a particular directory on a single metadata server.
+As a result, PVFS performance on large or highly trafficked directories is
+poor. Giga+ is a scheme for distributing the metadata for a directory across a
+set of servers.  SkyeFS implements the Giga+ algorithms on top of an unmodified
 PVFS file system.
 
 SkyeFS consists of a client (skye\_\-client) which functions as the FUSE filesystem
 and a server (skye\_\-server) which provides synchronization for metadata
-operations and controlls directory placement and splitting.  
+operations and controls directory placement and splitting.  
 
 Giga+ operates by splitting a directory into multiple partitions, which may or
 may not be on the same server, but act as distinct metadata stores.  Because in
 PVFS each directory stores all its metadata together on a single server, we
-represent each giga+ partition as a distinct PVFS directory.  A SkyeFS server
+represent each Giga+ partition as a distinct PVFS directory.  A SkyeFS server
 running on each PVFS metadata server (MDS) provides the synchronization and
 coordination for the partitions on the local PVFS MDS.  
 
@@ -42,11 +42,10 @@ future implementations of Giga+ or other systems on top of PVFS.
 
 \section{Implementation Overview}
 We choose to implement Giga+ on top of PVFS instead of modifying PVFS itself in
-order to keep the implementation clean and simple.  FUSE provides a easy option
+order to keep the implementation clean and simple.  FUSE provides an easy option
 for implementing the client-side of the system due to the ease of writing a FUSE
 file system driver.  Additionally, the pvfs2\-fuse application distributed with
 the PVFS source provides an example of how to implement FUSE operations in PVFS.
-Given these design choices, the following high-level design questions must be answered: 
 
 In PVFS, each object, both directories and files, are assigned a PVFS metadata
 handle.  Each MDS is assigned a range of handles for which it is
@@ -106,7 +105,7 @@ concurrent activity.
 \caption{SkyeFS Name Resolution}
 \end{figure}
 Given this layout, we must determine how clients are to translate logical
-pathnames to their respective PVFS objects.  The PVFS system interface uses PVFS
+path names to their respective PVFS objects.  The PVFS system interface uses PVFS
 handles to specify operands for most filesystem operations.  PVFS provides
 \code{PVFS\_\-sys\_\-lookup(path)} and \code{PVFS\_\-sys\_\-ref\_\-lookup(parent handle, name)}
 to translate either an absolute or relative path to a PVFS handle.  We implement
@@ -135,7 +134,7 @@ to open() and close() without having to check its validity.
 \end{center}
 \caption{SkyeFS Architecture Diagram}
 \end{figure}
-lookup() needs to be able to determine the partition in which a object should
+Lookup() needs to be able to determine the partition in which an object should
 live before it can issue the appropriate \code{PVFS\_\-sys\_\-lookup()} call to determine
 that object's handle, if it exists.  For this to be done quickly, and with a
 minimum of PVFS calls, we use a skye\_\-server process to maintain in RAM an
@@ -164,7 +163,7 @@ The client will then reattempt the RPC call to a new skye\_\-server as determine
 by the updated mapping.  This ensures both that locality as maintained and that
 the client's cached mapping will tend toward reality.
 
-The skye\_\-server process as also used to prevent a variety of race conditions.
+The skye\_\-server process is also used to prevent a variety of race conditions.
 By forwarding all operations that operate on a file path or name, as opposed to
 only a PVFS handle, to the skye\_\-server we ensure that splitting does not
 interfere with successful execution of thees commands.  For example, during a
@@ -184,12 +183,12 @@ explicitly storing any of this metadata whenever possible and instead
 interrogate the state of a directory in PVFS to determine these values.
 
 Rather than building into SkyeFS our own mechanism for maintenance of server
-lists we simply ask PVFS for the current server list on startup.  Tests indicate
+lists we simply ask PVFS for the current server list on start up.  Tests indicate
 that PVFS will always return this in the same order.  In the event of a server
 addition the new servers are simply added to the end of the list.  As PVFS does
 not support the removal of servers, we do not need to provide support for that
 functionality.  Therefore, to determine the server list at the time of a
-directory creation we only need to know the numeber of servers that existed when
+directory creation we only need to know the number of servers that existed when
 the directory was created.
 
 When the server's read-through cache suffers a cache miss it must populate a new
@@ -280,7 +279,7 @@ entry to the queue it signals on the condition variable to wake up the splitting
 thread.  The splitting thread iterates through the queue and splits all
 specified partitions which are found to still be over the splitting threshold.
 
-To split a partition, the splitting thread first acquires a write lock n the
+To split a partition, the splitting thread first acquires a write lock in the
 directory.  This ensures that all operations currently outstanding on the
 directory are finished before the lock is acquired and that no new operations
 may begin.  The splitting thread then creates the destination partition using a
@@ -303,7 +302,7 @@ first the old directory will be checked and if the object is not found there the
 new directory will be checked.  The PVFS rename() operation ensures that a
 renamed file is always visible in at least one of the source or destination
 directories.  Therefore, this technique is guaranteed to always find the object 
-if it exists.  The rwlock is necessairy for this technique to work because the
+if it exists.  The rwlock is necessary for this technique to work because the
 operating thread must know for certain that the partition it needs did not split
 during the operation.  If the operation simply checked the bitmap at the end of
 the operation it would be able to retry but this could lead to a situation where
@@ -339,8 +338,8 @@ splitting partition at a time.
 Our directory creation code extends create()'s locking and splitting
 functionality to handle a few directory creation issues.  Instead of using
 \code{PVFS\_\-sys\_\-create()} to create a file, the \code{PVFS\_\-sys\_\-mkdir()} call is
-used to create tho logical directory.  The server on which that directory was
-created is determined by the handle of the new directory and a new subdirectory
+used to create the logical directory.  The server on which that directory was
+created is determined by the handle of the new directory and a new sub directory
 \code{p00000} is created for the first partition on the same server.  This
 ensures that the zeroth server can be determined by looking at the logical
 directory's handle in addition to the first partition's handle.  The handle of
@@ -366,10 +365,10 @@ same logic as the lookup() operation for finding a file in a partition and then
 simply issue a \code{PVFS\_\-sys\_\-remove()} for that object.
 
 Directories are another story.  The remove operation on a directory must fail if
-there exists any files in the directory otherwise remove the directory.  This
-means that we need to be able to remove the directory atomically from the
-perspective of the user and ensure that any concurrent create() operations
-either fail or cause the remove() to fail.
+there exists any files in the directory, otherwise the directory must be
+removed.  This means that we need to be able to remove the directory
+atomically from the perspective of the user and ensure that any concurrent
+create() operations either fail or cause the remove() to fail.
 
 To coordinate removal of a directory, we implement a server to server RPC call
 called bucket\_\-remove().  The client attempting to remove a directory will send a
@@ -395,7 +394,7 @@ a valid bitmap in itself.
 We also need some mechanism to update client bitmaps to remove the now missing
 partitions.  The merge operation performed by the client does a logical
 OR of the old and new bitmaps making it unable to handle a removal.  Instead, we
-rely on a failsafe, ``something is wrong'' mechanism.  If a client receives an
+rely on a fail safe, ``something is wrong'' mechanism.  If a client receives an
 EAGAIN from a server but merging the bitmaps does not add any new partitions,
 the client will assume that something was removed and simply replace its bitmap
 with the server provided one.\footnote{This is currently unimplemented}
@@ -438,7 +437,7 @@ to our users.  Instead, our readdir() mechanism is a ``best effort'' attempt
 at providing a listing of the directory.  To accomplish this the client will
 perform a PVFS\_sys\_readdir() of the logical directory handle returned by
 lookup().  The client will then perform a PVFS\_sys\_readdir() of all handles
-returned aggregating the results.  This naieve approch will enter both real
+returned aggregating the results.  This naive approach will enter both real
 partitions and splitting partitions.  While this may result in some files
 being returned twice or not at all it is an inexpensive approach that will
 work well in static or small directories.  We anticipate that the directories
@@ -495,12 +494,12 @@ tolerant or highly available configurations.  As a result, we do not make any
 attempts to provide redundant services or fall over support in the case of
 failures.  We assume that skye\_\-server processes and the PVFS servers fail
 together and that any failure will render the system unusable until resolved by
-restaring the system.
+restarting the system.
 
 However, we do make every effort to leave the system in a usable state at all
 times should any component fail.  Any skye process can fail at any time and the
 resulting state will be repaired transparently upon restart.  This is primarily
-due to the lack of additional SkyeFS metedata that is required on top of the
+due to the lack of additional SkyeFS metadata that is required on top of the
 PVFS file system.  By carefully controlling the sequence of actions we take on
 the PVFS file system we are able to ensure that any state of PVFS is
 recognizable as either complete or the result of an unfinished action which can
