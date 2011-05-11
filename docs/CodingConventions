@@ -3,5 +3,5 @@ Coding Conventions
 
 Return Values
 -------------
- * Success returns or a positive value indicating the amount of success
+ * Success returns 0 or a positive value indicating the amount of success
  * Errors are negated values from errno.h (i.e. -EAGAIN)
