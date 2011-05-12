@@ -28,7 +28,6 @@ static int enter_bucket(PVFS_credentials *creds, struct skye_directory *dir, con
 
         if (server != skye_options.servernum){
             memcpy(bitmap, &dir->mapping, sizeof(dir->mapping));
-            cache_return(dir);
             return -EAGAIN;
         }
     }
@@ -98,6 +97,7 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
     struct skye_directory *dir = cache_fetch(&parent);
     if (!dir){
+        dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, parent.handle);
         result->errnum = -EIO;
         return true;
     }
@@ -149,6 +149,7 @@ bool_t skye_rpc_partition_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
     struct skye_directory *dir = cache_fetch(&parent);
     if (!dir){
+        dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, parent.handle);
         result->errnum = -EIO;
         return true;
     }
@@ -217,6 +218,7 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
     struct skye_directory *dir = cache_fetch(&parent);
     if (!dir){
+        dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, parent.handle);
         result->errnum = -EIO;
         return true;
     }
@@ -252,7 +254,7 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     }
 
 
-    if (isdir_overflow(&creds, &parent) == 1) {
+    if (dir->splitting_index == -1 && isdir_overflow(&creds, &parent) == 2) {
         int index = giga_get_index_for_file(&dir->mapping, filename);
         perform_split(&dir->handle, index);
     }
@@ -262,9 +264,10 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     result->skye_lookup_u.ref = resp_create.ref;
 
     endtime = time(NULL);
-    double elapsedtime = difftime(starttime, endtime);
+    double elapsedtime = difftime(endtime, starttime);
 
-    dbg_msg(log_fp, "[%s] created %lu/%s in %lf", __func__, parent.handle, filename, elapsedtime);
+    if (elapsedtime > 1.0)
+        dbg_msg(log_fp, "[%s] created %lu/%s in %lf", __func__, parent.handle, filename, elapsedtime);
 
     return true;
 }
@@ -278,6 +281,7 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
     struct skye_directory *dir = cache_fetch(&parent);
     if (!dir){
+        dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, parent.handle);
         result->errnum = -EIO;
         return true;
     }
@@ -412,6 +416,7 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
     struct skye_directory *dir = cache_fetch(&parent);
     if (!dir){
+        dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, parent.handle);
         result->errnum = -EIO;
         return true;
     }
@@ -482,6 +487,7 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
 
     struct skye_directory *dir = cache_fetch(&dst_parent);
     if (!dir){
+        dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, dst_parent.handle);
         result->errnum = -EIO;
         return true;
     }
@@ -506,6 +512,8 @@ bool_t skye_rpc_bucket_add_1_svc(PVFS_object_ref handle, int index, int *result,
     bool_t retval = true;
     (void)result;
     (void)rqstp;
+
+    dbg_msg(stderr, "[%s] I've now got %lu/%d", __func__, handle.handle, index);
 
     struct skye_directory *dir = cache_fetch_w(&handle);
 

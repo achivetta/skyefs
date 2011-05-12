@@ -57,7 +57,20 @@ void * split_thread(void * unused){
 }
 
 void perform_split(PVFS_object_ref *parent, index_t pindex){
-    dbg_msg(stderr, "[%s] enqueueing split of %lu/%d", __func__, parent->handle, pindex);
+
+    int ret = pthread_mutex_lock(&queue_mutex);
+    if (ret) err_dump("unable to lock queue_mutex");
+
+    struct split_task *last = NULL;
+    if (queue)
+        last = queue->prev;
+    if (last && memcmp(&last->parent, parent, sizeof(parent)) == 0 &&
+        memcmp(&last->pindex, &pindex, sizeof(pindex)) == 0){
+        ret = pthread_mutex_unlock(&queue_mutex);
+        if (ret) err_dump("unable to unlock queue_mutex");
+
+        return;
+    }
 
     struct split_task *task = malloc(sizeof(struct split_task));
     if (!task)
@@ -65,11 +78,6 @@ void perform_split(PVFS_object_ref *parent, index_t pindex){
 
     task->parent = *parent;
     task->pindex = pindex;
-
-    int ret;
-
-    ret = pthread_mutex_lock(&queue_mutex);
-    if (ret) err_dump("unable to lock queue_mutex");
 
     DL_APPEND(queue, task);
 
@@ -110,8 +118,8 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
     }
     phandle = lk_response.ref;
 
-    /* FIXME: need to invalidate metadata first ? */
     if (!isdir_overflow(&creds, &phandle)){
+        dbg_msg(stderr, "[%s] No need to split %lu/%d", __func__, parent.handle, pindex);
         goto exit;
     }
 
@@ -143,11 +151,12 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
     
     //(4) readdir() old partition, rename the files that will move
 
+    dbg_msg(stderr, "[%s] beginning move of files in %lu/%d", __func__, parent.handle, pindex);
     int moved;
     do {
         moved = 0;
         PVFS_sysresp_readdir rd_response;
-        unsigned int pvfs_dirent_incount = 32; // reasonable chank size
+        unsigned int pvfs_dirent_incount = 250; // reasonable chank size
         PVFS_ds_position token = 0;
 
         do {
@@ -185,8 +194,9 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
             }
 
         } while(rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
-
+        dbg_msg(stderr, "[%s] moved %d files in %lu/%d", __func__, moved, parent.handle, pindex);
     } while (moved > 0);
+    dbg_msg(stderr, "[%s] completed move of files in %lu/%d", __func__, parent.handle, pindex);
 
     //(5) after all entries have been moved, send RPC to server
     
@@ -262,7 +272,10 @@ int isdir_overflow(PVFS_credentials *creds, PVFS_object_ref *handle)
 
     //XXX: fix the size for now
     if (attrs->dirent_count > SPLIT_THRESHOLD){
-        return 1;
+        if (attrs->dirent_count % SPLIT_THRESHOLD < 25)
+            return 2;
+        else
+            return 1;
     }
     return 0;
 } 

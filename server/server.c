@@ -1,5 +1,6 @@
 #include "server.h"
 #include "split.h"
+#include "cache.h"
 #include "common/trace.h"
 #include "common/defaults.h"
 #include "common/skye_rpc.h"
@@ -294,6 +295,8 @@ int main(int argc, char **argv)
 
     // handling SIGINT
     signal(SIGINT, sig_handler);
+
+    cache_init();
 
     pvfs_connect(fs_spec);
 

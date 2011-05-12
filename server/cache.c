@@ -7,12 +7,15 @@
 #include <pvfs2-util.h>
 #include <assert.h>
 #include <stdio.h>
-
-/* FIXME: this file is not thread safe */
+#include <time.h>
 
 static struct skye_directory *dircache = NULL;
+static pthread_rwlockattr_t rwlockattr;
 
 int cache_init(void){
+   int ret = pthread_rwlockattr_setkind_np(&rwlockattr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+   if (ret != 0)
+       err_quit("[%s] Unable to set rwlock attributes. (ret=%d)", __func__, ret);
    return 0; 
 }
 
@@ -67,7 +70,7 @@ static struct skye_directory* new_directory(PVFS_object_ref *handle){
     if (!dir)
         return NULL;
 
-    if (pthread_rwlock_init(&dir->rwlock, NULL)){
+    if (pthread_rwlock_init(&dir->rwlock, &rwlockattr)){
         free(dir);
         return NULL;
     }
@@ -99,8 +102,10 @@ static struct skye_directory *fetch(PVFS_object_ref *handle){
     if (!dir)
         dir = new_directory(handle);
 
-    if (!dir)
+    if (!dir){
+        dbg_msg(stderr, "[%s] Unable to find or initialize skye_directory for %lu", __func__, handle->handle);
         return NULL;
+    }
 
     /* increment ref count */
     __sync_fetch_and_add(&dir->refcount, 1);
@@ -110,13 +115,21 @@ static struct skye_directory *fetch(PVFS_object_ref *handle){
 
 struct skye_directory* cache_fetch(PVFS_object_ref *handle){
     struct skye_directory *dir = fetch(handle);
-    pthread_rwlock_rdlock(&dir->rwlock);
+    if (dir)
+        pthread_rwlock_rdlock(&dir->rwlock);
     return dir;
 }
 
 struct skye_directory* cache_fetch_w(PVFS_object_ref *handle){
     struct skye_directory *dir = fetch(handle);
-    pthread_rwlock_wrlock(&dir->rwlock);
+    if (dir){
+        time_t start = time(NULL);
+        pthread_rwlock_wrlock(&dir->rwlock);
+        time_t end = time(NULL);
+        double elapsed = difftime(end, start);
+        if (elapsed > 1.0)
+            dbg_msg(stderr, "[%s] WARNING: took %f seconds to get writer lock.", __func__, elapsed);
+    }
     return dir;
 }
 
