@@ -95,6 +95,7 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
     int ret;
 
     dbg_msg(stderr, "[%s] START splitting %lu/%d", __func__, parent.handle, pindex);
+    time_t startime = time(NULL);
 
     struct skye_directory *dir = cache_fetch_w(&parent);
     if (!dir){
@@ -156,11 +157,11 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
     do {
         moved = 0;
         PVFS_sysresp_readdir rd_response;
-        unsigned int pvfs_dirent_incount = 250; // reasonable chank size
+        unsigned int pvfs_dirent_incount = 30; // reasonable chank size
         PVFS_ds_position token = 0;
 
         do {
-            unsigned int i;
+            int i;
 
             memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
             ret = PVFS_sys_readdir(phandle, (!token ? PVFS_READDIR_START : token),
@@ -171,16 +172,31 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
                 goto exit; /* FIXME: handle error */
             }
 
-            for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
+            PVFS_sys_op_id op_ids[30]; // same as incount above
+            int outstanding = 0;
+
+            for (i = 0; (unsigned int)i < rd_response.pvfs_dirent_outcount; i++) {
                 char *name = rd_response.dirent_array[i].d_name;
 
                 if (giga_file_migration_status(name, cindex)){
-                    ret = PVFS_sys_rename(name, phandle, 
+                    ret = PVFS_isys_rename(name, phandle, 
                                           name, chandle, 
-                                          &creds, PVFS_HINT_NULL);
-                    /* FIXME: what to do in case of error? */
+                                          &creds, &op_ids[outstanding], PVFS_HINT_NULL, NULL);
                     moved++;
+                    /* FIXME: what to do in case of error? */
+                    if (ret){
+                        dbg_msg(stderr, "[%s] WARNING: Unable to rename file (%d)", __func__, PVFS_get_errno_mapping(ret));
+                    } else {
+                        outstanding++;
+                    }
                 }
+            }
+
+            for (i = 0; i < outstanding; i++){
+                PVFS_error error;
+                ret = PVFS_sys_wait(op_ids[i], "rename", &error);
+                if (ret)
+                        dbg_msg(stderr, "[%s] WARNING: Unable to wait on rename file", __func__);
             }
 
             if (!token)
@@ -216,7 +232,9 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
     dir->splitting_index = -1;
     giga_update_mapping(&dir->mapping, cindex);
 
-    dbg_msg(stderr, "[%s] DONE splitting %lu/%d", __func__, parent.handle, pindex);
+    time_t endtime = time(NULL);
+    double elapsedtime = difftime(endtime, startime);
+    dbg_msg(stderr, "[%s] DONE splitting %lu/%d in %f seconds", __func__, parent.handle, pindex, elapsedtime);
 
 exit:
     if (dir)
@@ -272,10 +290,7 @@ int isdir_overflow(PVFS_credentials *creds, PVFS_object_ref *handle)
 
     //XXX: fix the size for now
     if (attrs->dirent_count > SPLIT_THRESHOLD){
-        if (attrs->dirent_count % SPLIT_THRESHOLD < 25)
-            return 2;
-        else
-            return 1;
+        return 1;
     }
     return 0;
 } 
