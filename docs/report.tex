@@ -230,7 +230,7 @@ This persistence scheme results in a system that can halt at almost any time
 without leaving the system in an inconsistent state.
 
 \section{Filesystem Operations}
-\subsection{Splitting, and create()}
+\subsection{Splitting and file creation}
 \begin{figure}
 \begin{center}
 \includegraphics[scale=0.4]{figure-create}
@@ -338,7 +338,7 @@ operations at the PVFS server.  In addition, this allows us to simplify our data
 structures for each directory significantly because we only have to note one
 splitting partition at a time.
 
-\subsection{mkdir()}
+\subsection{Directory Creation}
 Our directory creation code extends \code{create()}'s locking and splitting
 functionality to handle a few directory creation issues.  Instead of using
 \code{PVFS\_\-sys\_\-create()} to create a file, the \code{PVFS\_\-sys\_\-mkdir()} call is
@@ -347,23 +347,24 @@ created is determined by the handle of the new directory.  A new sub directory
 call``p00000'' is created on the same server as the zeroth partition of the
 directory.  This ensures that the zeroth server can be determined by looking
 at the logical directory's handle in addition to the zeroth partition's handle.
-The handle of the newly created directory is then passed back to the client.
+The handle of the newly created logical directory is then returned to the client.
 
 When the client first attempts to access the new directory it will contact the
-zeroth server for that directory as part of the cache population process.  That
-server will also undergo the cache population process and find that it owns the
-zeroth partition of that directory.  From the perspective of the destination
-directory, the creation of a new directory is indistinguishable from the first
-(cache cold) access of an existing, empty directory.
+zeroth partition's server for that directory as a result of the cache
+population process.  That server will also undergo the cache population
+process and find that it owns the zeroth partition of that directory.  From
+the perspective of the destination server, the creation of a new directory is
+indistinguishable from the first (cache cold) access of an existing, empty
+directory.
 
 Should the server doing directory creation fail between the creation of the
 logical directory and the first partition an inconsistent state will be
 left.\footnote{This is currently unimplemented}  In the event that such a
-directory is encountered by the server it can simply delete the directory to
-return to a consistent state.  This check could be implemented as part of a
-fsck process.
+directory is encountered, the server can simply delete the directory to return
+to a consistent state.  This check could also be implemented as part of a fsck
+process.
 
-\subsection{remove()}
+\subsection{Object Removal}
 The remove operation for a file is a relatively simple operation.  We use the
 same logic as the \code{lookup()} operation for finding a file in a partition
 and then simply issue a \code{PVFS\_\-sys\_\-remove()} for that object.
@@ -372,7 +373,7 @@ Directories are another story.  The remove operation on a directory must fail if
 there exists any files in the directory, otherwise the directory must be
 removed.  This means that we need to be able to remove the directory
 atomically from the perspective of the user and ensure that any concurrent
-create() operations either fail or cause the remove() to fail.
+\code{create()} operations either fail or cause the \code{remove()} to fail.
 
 To coordinate removal of a directory, we implement a server to server RPC call
 called \code{bucket\_\-remove()}.  The client attempting to remove a directory will send a
@@ -401,18 +402,19 @@ We also need some mechanism to update client bitmaps to remove the now missing
 partitions.  The merge operation performed by the client does a logical
 OR of the old and new bitmaps making it unable to handle a removal.  Instead, we
 rely on a fail safe, ``something is wrong'' mechanism.  If a client receives an
-EAGAIN from a server but merging the bitmaps does not add any new partitions,
+\code{EAGAIN} from a server but merging the bitmaps does not add any new partitions,
 the client will assume that something was removed and simply replace its bitmap
 with the server provided one.\footnote{This is currently unimplemented}
 
-\subsection{rename()}
+\subsection{Rename}
 The rename operation presents a challenge because it must operate on two distinct
 objects that may not be located on the same server.  To solve this we use an
-optimistic retry strategy.  First, the client uses lookup() to determine the
-handle of the destination directory.  The \code{skye\_\-server} implements a partition()
-RPC call that is similar to lookup() but instead of returning the handle of the
+optimistic retry strategy.  First, the client uses \code{lookup()} to determine the
+handle of the destination directory.  The \code{skye\_\-server} implements a
+\code{partition()}
+RPC call that is similar to \code{lookup()} but instead of returning the handle of the
 requested object it returns the handle of the encompassing partition.  The
-client executing a rename() uses the partition() RPC to determine the handle of
+client executing a \code{rename()} uses the \code{partition()} RPC to determine the handle of
 the source directory.  These two handles and the source and destination file
 names are passed to the destination partition's \code{skye\_\-server}.  The \code{skye\_\-server}
 will attempt to move the file using the provided source handle and name into the
@@ -429,25 +431,25 @@ calls but is vulnerable to starvation in the event of high rates of splitting.
 We believe this this risk of starvation is unlikely to occur in practice due to
 the speed at which a split can progress.
 
-\subsection{readdir()}
+\subsection{Directory Listing}
 \begin{figure}
 \begin{center}
 \includegraphics[scale=0.4]{figure-readdir}
 \end{center}
 \caption{SkyeFS readdir()}
 \end{figure}
-The readdir() operation requires some modification to handle the Giga+
+The \code{readdir()} operation requires some modification to handle the Giga+
 partitioning.  While PVFS provides directory versioning to allow clients to
 get a consistent snapshot of a directory we do not provide any such mechanism
-to our users.  Instead, our readdir() mechanism is a ``best effort'' attempt
+to our users.  Instead, our \code{readdir()} mechanism is a ``best effort'' attempt
 at providing a listing of the directory.  To accomplish this the client will
-perform a PVFS\_sys\_readdir() of the logical directory handle returned by
-lookup().  The client will then perform a PVFS\_sys\_readdir() of all handles
+perform a \code{PVFS\_sys\_readdir()} of the logical directory handle returned by
+\code{lookup()}.  The client will then perform a \code{PVFS\_sys\_readdir()} of all handles
 returned aggregating the results.  This naive approach will enter both real
 partitions and splitting partitions.  While this may result in some files
 being returned twice or not at all it is an inexpensive approach that will
 work well in static or small directories.  We anticipate that the directories
-for which this approach fails are too big for readdir() to be useful.
+for which this approach fails are too big for \code{readdir()} to be useful.
 
 \subsection{Other Operations}
 \begin{figure}
@@ -457,27 +459,28 @@ for which this approach fails are too big for readdir() to be useful.
 \caption{SkyeFS IO Operations}
 \end{figure}
 All other operations are relatively straightforward modifications of their
-pvfs2\-fuse counterparts with the PVFS lookup() operation replaced by our own
-version.  This includes both data operations such as read() and write() as well
-as metadata operations like stat() and chmod().  Because we resolve all objects
-to stable PVFS handles inside their Giga+ partitions, these operations can
-proceed on the client without concern for future splitting.
+pvfs2\-fuse counterparts with the PVFS \code{lookup()} operation replaced by
+our own version.  This includes both data operations such as \code{read()} and
+\code{write()} as well as metadata operations like \code{stat()} and
+\code{chmod()}.  Because we resolve all objects to PVFS handles inside their
+Giga+ partitions, these operations can proceed on the client without concern
+for future splitting.
 
 \section{Other Considerations}
 \subsection{Multi-step Lookup}
-In the current system, a lookup() call can only descend one step in a path
+In the current system, a \code{lookup()} call can only descend one step in a path
 traversal.  Future work could extend the operation to provide the entire path
-tho the \code{skye\_\-server} and allow the server to descend as many directories in the
-path as it owns.  This would be of limited value in the current system where the
-servers for a parent and child directory are chosen independently.  At the cost
-of load balancing, parent and child directories could be placed on the same
-server more often than chance to allow this mechanism to speed directory lookups
-in more cases.  One example scheme to achieve this would be to place all new
-directories on the same server as their parent.  When a directory splits the
-first time the zeroth server would be moved to a new server chosen at random.
-This would have the effect of keeping strings of small (and likely low-traffic)
-directories on the same server while still ensuring that large directories are
-load-balanced.
+to the \code{skye\_\-server} and allow the server to descend as many
+directories in the path as it owns.  This would be of limited value in the
+current system where the servers for a parent and child directory are chosen
+independently.  At the cost of load balancing, parent and child directories
+could be placed often on the same server to allow this mechanism to speed
+directory lookups.  One example scheme to achieve this would be to place all
+new directories on the same server as their parent.  When a directory splits
+the first time the zeroth server would be moved to a new server chosen at
+random.  This would have the effect of keeping strings of small (and likely
+low-traffic) directories on the same server while still ensuring that large
+directories are load-balanced.
 
 \subsection{Server Addition}
 PVFS includes very limited support for server addition.  While new servers can
@@ -503,28 +506,32 @@ failures.  We assume that \code{skye\_\-server} processes and the PVFS servers f
 together and that any failure will render the system unusable until resolved by
 restarting the system.
 
-However, we do make every effort to leave the system in a usable state at all
-times should any component fail.  Any skye process can fail at any time and the
-resulting state will be repaired transparently upon restart.  This is primarily
-due to the lack of additional SkyeFS metadata that is required on top of the
-PVFS file system.  By carefully controlling the sequence of actions we take on
-the PVFS file system we are able to ensure that any state of PVFS is
-recognizable as either complete or the result of an unfinished action which can
-then be resumed or aborted.
+However, we do make every effort to leave the system in a consistant state at
+all times should any component fail.  Any skye process can fail at any time
+and the resulting state will be repaired transparently upon restart.  This is
+primarily due to the lack of additional SkyeFS metadata that is required on
+top of the PVFS file system.  By carefully controlling the sequence of actions
+we take on the PVFS file system we are able to ensure that any state of PVFS
+is recognizable as either complete or the result of an unfinished action which
+can then be resumed or aborted.
 
 \subsection{Client and Server Thread Models}
-Our current threading model for the \code{skye\_\-server} is based on the initial Giga+
-prototype system in which a new thread is spawned for each connecting client.
-When large numbers of clients are active this has the potential to be a
-performance issue.  Other architectures for the server should be considered. 
+Our current threading model for the \code{skye\_\-server} is based on the
+initial Giga+ prototype system in which a new thread is spawned for each
+connecting client.  When large numbers of clients are active this has the
+potential to be a performance issue.  Other architectures for the server
+should be considered. 
 
-On the \code{skye\_\-client} side we currently single thread the FUSE process causing all
-operations to be serialized.  This is necessary because our initial tests
-showed that the PVFS has the potential to stall when many requests using the
-synchronous operations are in flight.  The recommendation from PVFS developers is
-to switch to the low level FUSE interface and the asynchronous version of PVFS
-operations.
+On the \code{skye\_\-client} side we currently single thread the FUSE process
+causing all operations to be serialized.  This is necessary because our
+initial tests showed that the PVFS has the potential to stall when many
+requests using the synchronous operations are in flight.  The recommendation
+from PVFS developers is to switch to the low level FUSE interface and the
+asynchronous version of PVFS operations.
 
+\section{Performance Analysis}
+
+\emph{To be completed.}
 
 \section{Conclusion and Take Aways}
 We've described the design and implementation of the SkyeFS system.  The
