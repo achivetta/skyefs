@@ -157,7 +157,7 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
     do {
         moved = 0;
         PVFS_sysresp_readdir rd_response;
-        unsigned int pvfs_dirent_incount = 30; // reasonable chank size
+        unsigned int pvfs_dirent_incount = 500; // reasonable chank size
         PVFS_ds_position token = 0;
 
         do {
@@ -172,29 +172,45 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
                 goto exit; /* FIXME: handle error */
             }
 
-            PVFS_sys_op_id op_ids[30]; // same as incount above
-            int outstanding = 0;
+            PVFS_sys_op_id op_ids[10]; // same as incount above
+            int j = 0;
 
             for (i = 0; (unsigned int)i < rd_response.pvfs_dirent_outcount; i++) {
                 char *name = rd_response.dirent_array[i].d_name;
 
-                if (giga_file_migration_status(name, cindex)){
-                    ret = PVFS_isys_rename(name, phandle, 
-                                          name, chandle, 
-                                          &creds, &op_ids[outstanding], PVFS_HINT_NULL, NULL);
-                    moved++;
-                    /* FIXME: what to do in case of error? */
-                    if (ret){
-                        dbg_msg(stderr, "[%s] WARNING: Unable to rename file (%d)", __func__, PVFS_get_errno_mapping(ret));
-                    } else {
-                        outstanding++;
-                    }
+                if (!giga_file_migration_status(name, cindex)){
+                    continue;
                 }
+
+                // Wait on old request
+                if (j >= 10){
+                    PVFS_error error;
+                    ret = PVFS_sys_wait(op_ids[j % 10], "rename", &error);
+                    if (ret)
+                        dbg_msg(stderr, "[%s] WARNING: Unable to wait on rename file", __func__);
+                }
+
+                ret = PVFS_isys_rename(name, phandle, 
+                                       name, chandle, 
+                                       &creds, &op_ids[j % 10], PVFS_HINT_NULL, NULL);
+
+                if (ret)
+                    dbg_msg(stderr, "[%s] WARNING: Unable to rename file (%d)", __func__, PVFS_get_errno_mapping(ret));
+                else
+                    j++;
+
+                moved++;
             }
 
-            for (i = 0; i < outstanding; i++){
+            if (j >= 10)
+                i = j - 10;
+            else
+                i = 0;
+
+            /* cleanup remaining requests */
+            for (; j < j; i++){
                 PVFS_error error;
-                ret = PVFS_sys_wait(op_ids[i], "rename", &error);
+                ret = PVFS_sys_wait(op_ids[i % 10], "rename", &error);
                 if (ret)
                         dbg_msg(stderr, "[%s] WARNING: Unable to wait on rename file", __func__);
             }

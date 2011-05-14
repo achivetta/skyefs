@@ -249,8 +249,8 @@ algorithm.  In PVFS we are able to achieve a high degree of concurrency in the
 face of splitting thanks to the stability of PVFS file handles and the rename
 semantics.
 
-Each logical directory is provided a \code{struct skye\_\-directory} on the server.  This
-structure is defined approximately as follows:
+Each logical directory is represented by a \code{struct skye\_\-directory} on
+the server.  This structure is defined approximately as follows:
 
 \begin{lstlisting}
 struct skye_directory {
@@ -263,17 +263,18 @@ struct skye_directory {
 };
 \end{lstlisting}
 
-During normal operation, when no splits are happening, splitting\_\-index has the
-value of -1.  When an operation needs to access the directory, it acquires a
-read lock on the rwlock for the duration of the operation.  By holding the
-rwlock, the operation can be assured that no partition will begin to split until
-the lock is released.
+During normal operation, when no splits are happening,
+\code{splitting\_\-index} has the value of -1.  When an operation needs to
+access the directory, it acquires a read lock on the read-write lock for the
+duration of the operation.  By holding the read-write lock, the operation can
+be assured that no partition will begin to split until the lock is released.
 
-At the end of the create() call, a stat() operation is performed on the
-partition and the number of directory entries in the partition is compared to
-the system's split threshold.  If the current directory size is greater, the
-PVFS handle of the parent and the partition number are stored at the end of a
-queue of partitions to split.  The create() call then returns as normal.
+At the end of the \code{create()} call, a \code{stat()} operation is performed
+on the partition and the number of directory entries in the partition is
+compared to the system's split threshold.  If the current directory size is
+greater, the PVFS handle of the parent and the partition number are stored at
+the end of a queue of partitions to split.  The \code{create()} call then
+returns as normal.
 
 Each \code{skye\_\-server} has a dedicated splitter thread.  This thread waits on a
 condition variable associated with the split queue.  When an operation adds a
@@ -287,42 +288,43 @@ directory are finished before the lock is acquired and that no new operations
 may begin.  The splitting thread then creates the destination partition using a
 `s' prefix instead of a `p' prefix in order to indicate, in the event of system
 failures, that a partition is still in the process of splitting.\footnote{This
-is currently unimplemented.}  It also sets the splitting\_\-index field to be
-the index of the splitting partition.  The splitting thread then unlocks the
-directory to allow operations to continue.
+is currently unimplemented.}  It also sets the \code{splitting\_\-index} field
+to be the index of the splitting partition.  The splitting thread then unlocks
+the directory to allow operations to continue.
 
-The splitting thread performs a readdir() operation on the partition to be
+The splitting thread performs a \code{readdir()} operation on the partition to be
 split.  For each entry, it hashes the name to determine if the object is to be
-moved to the new partition and then executes the move, using the PVFS rename()
-operation, if necessary.
+moved to the new partition and then executes the move, using the PVFS
+\code{rename()} operation, if necessary.
 
 While this is happening, any thread that accesses the directory will notice that
-splitting\_\-index is not set to -1.  For creation operations, the correct
-post-split partition will automatically be used ensuring that the new object
-will end up in the correct partition.  For access operations such as lookup(),
-first the old directory will be checked and if the object is not found there the
-new directory will be checked.  The PVFS rename() operation ensures that a
-renamed file is always visible in at least one of the source or destination
-directories.  Therefore, this technique is guaranteed to always find the object 
-if it exists.  The rwlock is necessary for this technique to work because the
-operating thread must know for certain that the partition it needs did not split
-during the operation.  If the operation simply checked the bitmap at the end of
-the operation it would be able to retry but this could lead to a situation where
-an operation would be forced to retry many times, essentially starving
-operations on the directory.
+\code{splitting\_\-index} is not set to -1.  For creation operations, the
+correct post-split partition will automatically be used ensuring that the new
+object will end up in the correct partition.  For access operations such as
+lookup(), first the old directory will be checked and if the object is not
+found there the new directory will be checked.  The PVFS rename() operation
+ensures that a renamed file is always visible in at least one of the source or
+destination directories.  Therefore, this technique is guaranteed to always
+find the object if it exists.  The read-write lock is necessary for this technique to
+work because the operation must know for certain that the partition it
+accessed did not split during the operation.  If the operation simply checked
+the bitmap at the end of the operation it would be able to retry but this
+could lead to starvation, or at least many operations being forced to retry or
+correct inconsistent data.
 
 Upon completion of the split, the splitting thread reacquires a writer lock on
 the directory.  It renames the directory to begin with the prefix `p' instead of
-`s' and then sends a bucket\_\-add() RPC to the server responsible for the new
+`s' and then sends a \code{bucket\_\-add()} RPC to the server responsible for the new
 partition.  Upon positive reply the server updates its copy of the bitmap, sets
-the splitting\_\-index back to -1 and unlocks the rwlock.  In the event that
+the \code{splitting\_\-index} back to -1 and unlocks the rwlock.  In the event that
 a positive reply is not provided by the destination server, the source server
-may still provide service to that partition by leaving the splitting\_\-index set
-and not updating the bitmap.\footnote{This is currently unimplemented.}  This
-will force operations to continue to check both directories.  The splitting
-thread now sleeps and retries the bucket\_\-add() RPC until it succeeds.  In
-this failure case, we intentionally avoid splitting new partitions to ensure
-that we don't create many new ``orphaned partitions''.
+may still provide service to that partition by leaving the
+\code{splitting\_\-index} set and not updating the bitmap.\footnote{This is
+currently unimplemented.}  This will force operations to continue to check
+both directories.  The splitting thread now sleeps and retries the
+\code{bucket\_\-add()} RPC until it succeeds.  In this failure case, we
+intentionally avoid splitting new partitions to ensure that we don't create
+many new ``orphaned partitions''.
 
 We use a separate splitting thread for this operation to ensure that splittings
 are entirely asynchronous.  As a result, file system operations are able to
@@ -337,15 +339,15 @@ structures for each directory significantly because we only have to note one
 splitting partition at a time.
 
 \subsection{mkdir()}
-Our directory creation code extends create()'s locking and splitting
+Our directory creation code extends \code{create()}'s locking and splitting
 functionality to handle a few directory creation issues.  Instead of using
 \code{PVFS\_\-sys\_\-create()} to create a file, the \code{PVFS\_\-sys\_\-mkdir()} call is
 used to create the logical directory.  The server on which that directory was
-created is determined by the handle of the new directory and a new sub directory
-\code{p00000} is created for the first partition on the same server.  This
-ensures that the zeroth server can be determined by looking at the logical
-directory's handle in addition to the first partition's handle.  The handle of
-the newly created directory is then passed back to the client.
+created is determined by the handle of the new directory.  A new sub directory
+call``p00000'' is created on the same server as the zeroth partition of the
+directory.  This ensures that the zeroth server can be determined by looking
+at the logical directory's handle in addition to the zeroth partition's handle.
+The handle of the newly created directory is then passed back to the client.
 
 When the client first attempts to access the new directory it will contact the
 zeroth server for that directory as part of the cache population process.  That
@@ -363,8 +365,8 @@ fsck process.
 
 \subsection{remove()}
 The remove operation for a file is a relatively simple operation.  We use the
-same logic as the lookup() operation for finding a file in a partition and then
-simply issue a \code{PVFS\_\-sys\_\-remove()} for that object.
+same logic as the \code{lookup()} operation for finding a file in a partition
+and then simply issue a \code{PVFS\_\-sys\_\-remove()} for that object.
 
 Directories are another story.  The remove operation on a directory must fail if
 there exists any files in the directory, otherwise the directory must be
@@ -373,16 +375,17 @@ atomically from the perspective of the user and ensure that any concurrent
 create() operations either fail or cause the remove() to fail.
 
 To coordinate removal of a directory, we implement a server to server RPC call
-called bucket\_\-remove().  The client attempting to remove a directory will send a
-remove() RPC to the server holding the directory entry for the directory.  The
-server will then issue a bucket\_\-remove() RPC for each bucket in descending order
+called \code{bucket\_\-remove()}.  The client attempting to remove a directory will send a
+\code{remove()} RPC to the server holding the directory entry for the directory.  The
+server will then issue a \code{bucket\_\-remove()} RPC for each bucket in descending order
 (i.e. the highest numbered bucket first).  
 
 When a server receives this call it will attempt to remove the specified
 partition by issuing a \code{PVFS\_\-sys\_\-remove()} for the directory.  If the operation
 succeeds then the partition will be removed from the owner's bitmap and the
 owner will return a positive response to the caller.  The caller will also
-remove the partition from its bitmap and then issue the next bucket\_\-remove().
+remove the partition from its bitmap and then issue the next
+\code{bucket\_\-remove()}.
 
 If the \code{PVFS\_\-sys\_\-remove()} fails (for any reason other than \code{ENOENT}) the partition
 will remain in the bitmap and a negative response will be returned to the
@@ -390,7 +393,8 @@ server.  The coordinating server will then halt the operation and return an
 error to the client.  In this case care must be taken to ensure that the system
 is left in a consistent state.  By removing the partitions in descending order
 we ensure that we always remove the parent of a split before its child.
-Therefore, each intermediate bitmap (produced between bucket\_\-remove() calls) is
+Therefore, each intermediate bitmap (produced between
+\code{bucket\_\-remove()} calls) is
 a valid bitmap in itself.
 
 We also need some mechanism to update client bitmaps to remove the now missing
