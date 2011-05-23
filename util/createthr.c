@@ -13,13 +13,17 @@ volatile int lastfile;
 
 void alarmhandler(int signal){
     (void)signal;
+
     int now = curfile;
-    printf("%d\n", lastfile - now);
+    printf("%d\n", now - lastfile);
     lastfile = now;
+
+    alarm(1);
 }
 
 int main(int argc, char **argv){
     signal(SIGALRM, alarmhandler);
+    setvbuf(stdout,NULL,_IONBF,0);
 
     if (argc != 3){
         fprintf(stderr, "Usage: %s <test directory> <number of files to create>\n", argv[0]);
@@ -29,6 +33,7 @@ int main(int argc, char **argv){
     if(chdir(argv[1])){
         fprintf(stderr, "chdir(%s) error: %s\n",
                 argv[1], strerror(errno));
+        exit(1);
     }
 
     char filename[64];
@@ -44,7 +49,8 @@ int main(int argc, char **argv){
 
     fprintf(stderr, "prefix: %s\n", filename);
 
-    ualarm(1000000, 1000000);
+    //ualarm(1000000, 1000000);
+    alarm(1);
     for (curfile = 0; curfile < maxfiles; curfile++){
         sprintf(postfix, "%d", curfile);
 
