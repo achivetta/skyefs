@@ -420,6 +420,28 @@ int giga_file_migration_status(const char* filename, index_t new_index)
     return ret;
 }
 
+int giga_is_splittable(struct giga_mapping_t *mapping, index_t old_index)
+{
+    switch (SPLIT_TYPE) {
+        index_t new_index;
+        case SPLIT_T_NO_BOUND:
+            return 1;
+        case SPLIT_T_NO_SPLITTING_EVER:
+            return 0;
+        case SPLIT_T_NUM_SERVERS_BOUND:
+            new_index = giga_index_for_splitting(mapping, old_index);
+            if (new_index < MAX_BKTS_PER_SERVER * (signed int)mapping->server_count)
+                return 1;
+            else
+                return 0;
+        case SPLIT_T_NEXT_HIGHEST_POW2:
+            abort();
+    }
+
+    /* should never get here */
+    return 1;
+}
+
 // Print the struct giga_mapping_t contents. 
 //
 void giga_print_mapping(struct giga_mapping_t *mapping, FILE* fp)

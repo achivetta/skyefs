@@ -254,9 +254,10 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     }
 
 
-    if (dir->splitting_index == -1 && isdir_overflow(&creds, &parent)) {
+    if (dir->splitting_index == -1){
         int index = giga_get_index_for_file(&dir->mapping, filename);
-        perform_split(&dir->handle, index);
+        if (giga_is_splittable(&dir->mapping, index) && isdir_overflow(&creds, &parent))
+            perform_split(&dir->handle, index);
     }
     cache_return(dir);
 

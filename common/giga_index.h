@@ -26,6 +26,7 @@ typedef int index_t;                    // Index is the position in the bitmap
 
 #define SPLIT_TYPE                  SPLIT_T_NO_BOUND
 
+#define MAX_BKTS_PER_SERVER         2 
 
 // To avoid the signed and unsigned bit business, we just use the 7-bits in
 // every byte to represent the bitmap
@@ -112,6 +113,8 @@ index_t giga_get_server_for_index(struct giga_mapping_t *mapping,
 index_t giga_get_index_for_backup(index_t index); 
 
 index_t get_split_index_for_newserver(index_t index);
+
+int giga_is_splittable(struct giga_mapping_t *mapping, index_t old_index);
 
 #endif /* GIGA_INDEX_H */
 
