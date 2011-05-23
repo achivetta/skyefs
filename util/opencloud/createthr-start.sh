@@ -3,11 +3,12 @@ cd ~/skyefs/util
 
 if [ `hostname` = 'cloud1' ]; then
 echo "Removing old scratch directories..."
-rm -rf /tmp/skye_mnt/0
-mkdir -p /tmp/skye_mnt/0
+rm -rf /tmp/skye_mnt_1/0
+mkdir -p /tmp/skye_mnt_1/0
 echo "Done."
 fi
 
-./createthr /tmp/skye_mnt/0 25000 > ~/benchmark.logs/`hostname`_thr.log 2> ~/logs/gigabench-`hostname`.log &
-sleep 0.2
-disown %1
+for i in `seq 1 8`; do
+	./createthr /tmp/skye_mnt_$i/0 100000 > ~/benchmark.logs/`hostname`-$i-thr.log 2> ~/logs/createthr-$i-`hostname`.log &
+	disown %1
+done
