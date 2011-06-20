@@ -12,7 +12,11 @@
 #include <pvfs2-debug.h>
 
 #define THREADS 10
-#define FILES 300
+#define FILES 100
+
+/* FIXME: do we actually get the alarm every second
+ * FIXME: clean up files at end of test 
+ */
 
 typedef struct {
 	  PVFS_object_ref	ref;
@@ -28,6 +32,8 @@ struct pvfs2fuse {
 
 pthread_mutex_t global_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_barrier_t global_barrier;
+
+volatile int do_list = 0;
 
 static struct pvfs2fuse pvfs2fuse;
 
@@ -149,6 +155,7 @@ static int pvfs_fuse_mkdir(const char *path, mode_t mode)
 }
 #endif
 
+#if 0
 static int pvfs_fuse_remove( const char *path )
 {
    int rc;
@@ -168,6 +175,7 @@ static int pvfs_fuse_remove( const char *path )
 
    return 0;
 }
+#endif
 
 static int pvfs_fuse_create(const char *path, mode_t mode)
 {
@@ -237,8 +245,6 @@ static int pvfs_fuse_create(const char *path, mode_t mode)
 volatile int curfile = 0;
 volatile int lastfile = 0;
 
-volatile int creating = 0;
-
 void alarmhandler(int signal){
     (void)signal;
 
@@ -246,8 +252,69 @@ void alarmhandler(int signal){
     printf("Created %d files in the last second.\n", now - lastfile);
     lastfile = now;
 
-    if (creating)
+    alarm(1);
+}
+
+void *thread_list(void *arg)
+{
+    long locking = (long)arg;
+    int ret;
+
+    if (pthread_barrier_wait(&global_barrier) == PTHREAD_BARRIER_SERIAL_THREAD){
         alarm(1);
+    }
+
+    do {
+        struct timeval start, end;
+        gettimeofday(&start, NULL);
+
+        PVFS_sysresp_readdir rd_response;
+        unsigned int pvfs_dirent_incount = 8; // reasonable chank size
+        PVFS_ds_position token = 0;
+        pvfs_fuse_handle_t	dir_pfh;
+
+        ret = lookup( pvfs2fuse.scratch_dir, &dir_pfh, PVFS2_LOOKUP_LINK_FOLLOW );
+        if (ret < 0){
+            printf("couldn't lookup parent directory.\n");
+            continue;
+        }
+
+        do {
+            memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
+            if (locking)
+                pthread_mutex_lock(&global_mutex);
+
+            ret = PVFS_sys_readdir(dir_pfh.ref, (!token ? PVFS_READDIR_START : token),
+                                   pvfs_dirent_incount, &dir_pfh.creds, &rd_response,
+                                   PVFS_HINT_NULL);
+
+            if (locking)
+                pthread_mutex_unlock(&global_mutex);
+
+            if (ret < 0){
+                printf("couldn't list parent directory.\n");
+                continue;
+            }
+
+            if (!token)
+                token = rd_response.pvfs_dirent_outcount - 1;
+            else
+                token += rd_response.pvfs_dirent_outcount;
+
+            if (rd_response.pvfs_dirent_outcount) {
+                free(rd_response.dirent_array);
+                rd_response.dirent_array = NULL;
+            }
+
+        } while(rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
+
+        gettimeofday(&end, NULL);
+        printf("Listed directory in %ldms.\n",
+               (end.tv_sec-start.tv_sec)*1000 + (end.tv_usec-start.tv_usec)/1000);
+
+    } while (do_list);
+
+    return NULL;
 }
 
 void *thread_main(void *arg)
@@ -257,7 +324,6 @@ void *thread_main(void *arg)
     pthread_t tid = pthread_self();
 
     if (pthread_barrier_wait(&global_barrier) == PTHREAD_BARRIER_SERIAL_THREAD){
-        creating = 1;
         alarm(1);
     }
 
@@ -287,27 +353,6 @@ void *thread_main(void *arg)
            (end.tv_sec-start.tv_sec)*1000 + (end.tv_usec-start.tv_usec)/1000, 
            locking);
 
-    if (pthread_barrier_wait(&global_barrier) == PTHREAD_BARRIER_SERIAL_THREAD)
-        creating = 0;
-
-    gettimeofday(&start, NULL);
-
-    for (i = 0; i < FILES; i++){
-        char filename[200]; sprintf(filename, "%s/t%lu-f%d", pvfs2fuse.scratch_dir, (unsigned long)tid, i);
-        if (locking)
-            pthread_mutex_lock(&global_mutex);
-        pvfs_fuse_remove(filename);
-        if (locking)
-            pthread_mutex_unlock(&global_mutex);
-    }
-
-    gettimeofday(&end, NULL);
-
-    printf("Thread %lu completed remove()s in %ldms with locking set to %ld.\n",
-           (unsigned long)tid, 
-           (end.tv_sec-start.tv_sec)*1000 + (end.tv_usec-start.tv_usec)/1000, 
-           locking);
-
     return NULL;
 }
 
@@ -322,17 +367,28 @@ static void do_test(void)
   long locks;
   pthread_t tids[THREADS];
 
-  pthread_barrier_init(&global_barrier, NULL, THREADS);
+  pthread_barrier_init(&global_barrier, NULL, THREADS + 1);
 
   for (locks = 0; locks <= 1; locks++){
+
       printf("Running test with global lock = %ld.\n", locks);
       for (i = 0; i < THREADS; i ++)
           pthread_create(&tids[i], NULL, thread_main, (void*)locks);
 
+      do_list = 1;
+      pthread_t list_tid;
+      pthread_create(&list_tid, NULL, thread_list, (void*)locks);
+
       for (i = 0; i < THREADS; i ++)
           pthread_join(tids[i], NULL);
-      printf("All done.\n\n");
+
+      do_list = 0;
+      pthread_join(list_tid, NULL);
+
+      printf("All done - sleeping 3 seconds.\n\n\n");
+      sleep(3);
   }
+
 }
 
 int main(int argc, char *argv[])
