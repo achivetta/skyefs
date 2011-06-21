@@ -6,17 +6,14 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <signal.h>
+#include <sys/time.h>
 
 #include <pvfs2.h>
 #include <pvfs2-sysint.h>
 #include <pvfs2-debug.h>
 
 #define THREADS 10
-#define FILES 100
-
-/* FIXME: do we actually get the alarm every second
- * FIXME: clean up files at end of test 
- */
+#define FILES 5000
 
 typedef struct {
 	  PVFS_object_ref	ref;
@@ -251,25 +248,28 @@ void alarmhandler(int signal){
     int now = curfile;
     printf("Created %d files in the last second.\n", now - lastfile);
     lastfile = now;
-
-    alarm(1);
 }
 
 void *thread_list(void *arg)
 {
-    long locking = (long)arg;
     int ret;
+    long locking = (long)arg;
 
-    if (pthread_barrier_wait(&global_barrier) == PTHREAD_BARRIER_SERIAL_THREAD){
-        alarm(1);
-    }
+    pthread_barrier_wait(&global_barrier);
+
+    struct itimerval timer;
+    timer.it_value.tv_sec = 1;
+    timer.it_value.tv_usec = 0;
+    timer.it_interval.tv_sec = 1;
+    timer.it_interval.tv_usec = 0;
+    setitimer(ITIMER_REAL, &timer, NULL);
+
+    sleep(2);
 
     do {
-        struct timeval start, end;
-        gettimeofday(&start, NULL);
 
         PVFS_sysresp_readdir rd_response;
-        unsigned int pvfs_dirent_incount = 8; // reasonable chank size
+        unsigned int pvfs_dirent_incount = 500; // reasonable chank size
         PVFS_ds_position token = 0;
         pvfs_fuse_handle_t	dir_pfh;
 
@@ -279,17 +279,17 @@ void *thread_list(void *arg)
             continue;
         }
 
+        if (locking == 2)
+            pthread_mutex_lock(&global_mutex);
+
+        struct timeval start, end;
+        gettimeofday(&start, NULL);
         do {
             memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
-            if (locking)
-                pthread_mutex_lock(&global_mutex);
 
             ret = PVFS_sys_readdir(dir_pfh.ref, (!token ? PVFS_READDIR_START : token),
                                    pvfs_dirent_incount, &dir_pfh.creds, &rd_response,
                                    PVFS_HINT_NULL);
-
-            if (locking)
-                pthread_mutex_unlock(&global_mutex);
 
             if (ret < 0){
                 printf("couldn't list parent directory.\n");
@@ -309,6 +309,10 @@ void *thread_list(void *arg)
         } while(rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
 
         gettimeofday(&end, NULL);
+
+        if (locking == 2)
+            pthread_mutex_unlock(&global_mutex);
+
         printf("Listed directory in %ldms.\n",
                (end.tv_sec-start.tv_sec)*1000 + (end.tv_usec-start.tv_usec)/1000);
 
@@ -323,79 +327,77 @@ void *thread_main(void *arg)
 
     pthread_t tid = pthread_self();
 
-    if (pthread_barrier_wait(&global_barrier) == PTHREAD_BARRIER_SERIAL_THREAD){
-        alarm(1);
-    }
+    pthread_barrier_wait(&global_barrier); 
 
     struct timeval start, end;
 
     gettimeofday(&start, NULL);
 
-    int i;
-    for (i = 0; i < FILES; i++){
-        char filename[200]; sprintf(filename, "%s/t%lu-f%d", pvfs2fuse.scratch_dir, (unsigned long)tid, i);
+    int i = 0;
+    do{
+        char filename[200]; sprintf(filename, "%s/t%lu-f%d", pvfs2fuse.scratch_dir, (unsigned long)tid, i++);
 
+retry: 
         if (locking)
             pthread_mutex_lock(&global_mutex);
 
-        pvfs_fuse_create(filename, 0666);
-
-        __sync_fetch_and_add(&curfile,1);
+        int rc = pvfs_fuse_create(filename, 0666);
 
         if (locking)
             pthread_mutex_unlock(&global_mutex);
-    }
+
+        if (rc < 0){
+            printf("failed to create file (%d).\n", rc);
+            i--;
+            goto retry;
+        }
+    } while (__sync_fetch_and_add(&curfile,1) < FILES);
 
     gettimeofday(&end, NULL);
 
-    printf("Thread %lu completed create()s in %ldms with locking set to %ld.\n",
-           (unsigned long)tid, 
+    printf("Thread %lu completed %d create()s in %ldms with locking set to %ld.\n",
+           (unsigned long)tid, i,
            (end.tv_sec-start.tv_sec)*1000 + (end.tv_usec-start.tv_usec)/1000, 
            locking);
 
+    do_list = 0;
     return NULL;
 }
 
 static void usage(const char *progname)
 {
-   fprintf(stderr, "usage: %s fs_spec scratch_dir\n", progname);
+   fprintf(stderr, "usage: %s fs_spec scratch_dir global_locks\n", progname);
 }
 
-static void do_test(void)
+static void do_test(long locks)
 {
   int i;
-  long locks;
   pthread_t tids[THREADS];
 
   pthread_barrier_init(&global_barrier, NULL, THREADS + 1);
 
-  for (locks = 0; locks <= 1; locks++){
 
-      printf("Running test with global lock = %ld.\n", locks);
-      for (i = 0; i < THREADS; i ++)
-          pthread_create(&tids[i], NULL, thread_main, (void*)locks);
+  printf("Running test with global lock = %ld.\n", locks);
+  for (i = 0; i < THREADS; i ++)
+      pthread_create(&tids[i], NULL, thread_main, (void*)locks);
 
-      do_list = 1;
-      pthread_t list_tid;
-      pthread_create(&list_tid, NULL, thread_list, (void*)locks);
+  do_list = 1;
+  pthread_t list_tid;
+  pthread_create(&list_tid, NULL, thread_list, (void*)locks);
 
-      for (i = 0; i < THREADS; i ++)
-          pthread_join(tids[i], NULL);
+  for (i = 0; i < THREADS; i ++)
+      pthread_join(tids[i], NULL);
 
-      do_list = 0;
-      pthread_join(list_tid, NULL);
+  pthread_join(list_tid, NULL);
 
-      printf("All done - sleeping 3 seconds.\n\n\n");
-      sleep(3);
-  }
-
+  printf("All done.\n");
 }
 
 int main(int argc, char *argv[])
 {
    int ret;
 
-   if (argc != 3){
+   if (argc != 4){
        usage(argv[0]);
        exit(1);
    }
@@ -507,7 +509,7 @@ int main(int argc, char *argv[])
   pvfs2fuse.fs_id = me->fs_id;
 
   signal(SIGALRM, alarmhandler);
-  do_test();
+  do_test(atol(argv[3]));
 
   return 0;
 }
