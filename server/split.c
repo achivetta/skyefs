@@ -151,7 +151,6 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
     cache_return(dir);
     dir = NULL;
     */
-    pthread_rwlock_unlock(&dir->rwlock);
     
     //(4) readdir() old partition, rename the files that will move
 
@@ -177,8 +176,6 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
 
             PVFS_sys_op_id op_ids[10]; // same as incount above
             int j = 0;
-
-            pthread_rwlock_wrlock(&dir->rwlock);
 
             for (i = 0; (unsigned int)i < rd_response.pvfs_dirent_outcount; i++) {
                 char *name = rd_response.dirent_array[i].d_name;
@@ -219,8 +216,6 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
                 if (ret)
                         dbg_msg(stderr, "[%s] WARNING: Unable to wait on rename file", __func__);
             }
-            pthread_rwlock_unlock(&dir->rwlock);
-    
 
             if (!token)
                 token = rd_response.pvfs_dirent_outcount - 1;
@@ -238,12 +233,6 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
     dbg_msg(stderr, "[%s] completed move of files in %lu/%d", __func__, parent.handle, pindex);
 
     //(5) after all entries have been moved, send RPC to server
-    
-    /*
-    dir = cache_fetch_w(&parent);
-    if (!dir) err_dump("unable to re-take write lock on partition.");
-    */
-    pthread_rwlock_wrlock(&dir->rwlock);
     
     // FIXME: if this fails?!?
     if (server != skye_options.servernum){
