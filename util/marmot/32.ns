@@ -1,0 +1,18 @@
+set ns [new Simulator]
+source tb_compat.tcl
+
+set maxnodes 32
+set lanstr ""
+
+for {set i 0} {$i < $maxnodes} {incr i} { 
+	set node($i) [$ns node]
+	append lanstr "$node($i) "
+	tb-set-node-os $node($i) UBUNTU11-64-MARMOT
+	tb-set-node-startcmd $node($i) "/users/achivett/prepare.sh"
+}
+
+tb-set-sync-server $node(0)
+set big-lan [$ns make-lan "$lanstr" 1Gb 0ms]
+
+$ns rtproto Static
+$ns run
