@@ -150,8 +150,8 @@ static int dbg_msg_fp_va(FILE *fp, const char *format, va_list ap)
     if (ret < 0)
         return -errno;
 
-	strcat(buffer, "\n");
-    ret = fprintf(fp, buffer);
+    strcat(buffer, "\n");
+    ret = fprintf(fp, "%s", buffer);
     if (ret < 0) 
         return -errno;
     
