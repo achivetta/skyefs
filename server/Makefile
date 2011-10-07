@@ -1,7 +1,7 @@
 include ../Makefile.inc
 
 CFLAGS += -iquote ..
-LDFLAGS += -lpthread -lpvfs2
+LDFLAGS += -lpthread -lpvfs2 -lssl
 
 TARGETS = ../skye_server
 
