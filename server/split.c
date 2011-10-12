@@ -159,11 +159,14 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
     do {
         moved = 0;
         PVFS_sysresp_readdir rd_response;
-        unsigned int pvfs_dirent_incount = 500; // reasonable chank size
+        unsigned int pvfs_dirent_incount = 128; // reasonable chank size
         PVFS_ds_position token = 0;
 
         do {
             int i;
+            PVFS_sys_op_id op_ids[pvfs_dirent_incount];
+            int error_array[pvfs_dirent_incount];
+            int issued = 0, completed = 0;
 
             memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
             ret = PVFS_sys_readdir(phandle, (!token ? PVFS_READDIR_START : token),
@@ -174,9 +177,9 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
                 goto exit; /* FIXME: handle error */
             }
 
-            PVFS_sys_op_id op_ids[10]; // same as incount above
-            int j = 0;
+            if (!rd_response.pvfs_dirent_outcount) goto next_batch;
 
+            /* issue requests */
             for (i = 0; (unsigned int)i < rd_response.pvfs_dirent_outcount; i++) {
                 char *name = rd_response.dirent_array[i].d_name;
 
@@ -184,52 +187,42 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
                     continue;
                 }
 
-                // Wait on old request
-                if (j >= 10){
-                    PVFS_error error;
-                    ret = PVFS_sys_wait(op_ids[j % 10], "rename", &error);
-                    if (ret)
-                        dbg_msg(stderr, "[%s] WARNING: Unable to wait on rename file", __func__);
-                }
-
                 ret = PVFS_isys_rename(name, phandle, 
                                        name, chandle, 
-                                       &creds, &op_ids[j % 10], PVFS_HINT_NULL, NULL);
+                                       &creds, &op_ids[issued], PVFS_HINT_NULL, NULL);
+
 
                 if (ret)
                     dbg_msg(stderr, "[%s] WARNING: Unable to rename file (%d)", __func__, PVFS_get_errno_mapping(ret));
                 else
-                    j++;
+                    issued++;
 
                 moved++;
             }
 
-            if (j >= 10)
-                i = j - 10;
-            else
-                i = 0;
-
-            /* cleanup remaining requests */
-            for (; i < j; i++){
-                PVFS_error error;
-                ret = PVFS_sys_wait(op_ids[i % 10], "rename", &error);
-                if (ret)
-                        dbg_msg(stderr, "[%s] WARNING: Unable to wait on rename file", __func__);
+            /* wait on all requests */
+            while (completed < issued){
+                int count = issued;
+                PVFS_sys_testsome(op_ids, &count, NULL, error_array, INT_MAX);
+                completed += count;
             }
 
+            /* cleanup */
+            free(rd_response.dirent_array);
+            rd_response.dirent_array = NULL;
+
+next_batch:
             if (!token)
                 token = rd_response.pvfs_dirent_outcount - 1;
             else
                 token += rd_response.pvfs_dirent_outcount;
 
-            if (rd_response.pvfs_dirent_outcount) {
-                free(rd_response.dirent_array);
-                rd_response.dirent_array = NULL;
-            }
-
         } while(rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
+
         dbg_msg(stderr, "[%s] moved %d files in %lu/%d", __func__, moved, parent.handle, pindex);
+
     } while (moved > 0);
+
     dbg_msg(stderr, "[%s] completed move of files in %lu/%d", __func__, parent.handle, pindex);
 
     //(5) after all entries have been moved, send RPC to server
