@@ -163,10 +163,7 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
         PVFS_ds_position token = 0;
 
         do {
-            int i;
-            PVFS_sys_op_id op_ids[pvfs_dirent_incount];
-            int error_array[pvfs_dirent_incount];
-            int issued = 0, completed = 0;
+            int i, issued = 0;
 
             memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
             ret = PVFS_sys_readdir(phandle, (!token ? PVFS_READDIR_START : token),
@@ -187,9 +184,9 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
                     continue;
                 }
 
-                ret = PVFS_isys_rename(name, phandle, 
-                                       name, chandle, 
-                                       &creds, &op_ids[issued], PVFS_HINT_NULL, NULL);
+                ret = PVFS_sys_rename(name, phandle, 
+                                      name, chandle, 
+                                      &creds, PVFS_HINT_NULL);
 
 
                 if (ret)
@@ -198,13 +195,6 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
                     issued++;
 
                 moved++;
-            }
-
-            /* wait on all requests */
-            while (completed < issued){
-                int count = issued;
-                PVFS_sys_testsome(op_ids, &count, NULL, error_array, INT_MAX);
-                completed += count;
             }
 
             /* cleanup */
