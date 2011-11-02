@@ -51,13 +51,15 @@ int main(int argc, char **argv){
 
     //ualarm(1000000, 1000000);
     alarm(1);
+    int errors = 0;
     for (curfile = 0; curfile < maxfiles; curfile++){
         sprintf(postfix, "%d", curfile);
 
         if (mknod(filename, 0666, 0) < 0) {
             fprintf(stderr, "mknod(%s) error: %s\n",
                     filename, strerror(errno));
-            exit(2);
+            if (++errors > 50)
+                exit(2);
         }
     }
 
