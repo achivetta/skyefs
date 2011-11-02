@@ -491,7 +491,6 @@ exit1:
     return ret;
 
 exit2:
-    cache_return(dir);
 
     free(ref);
 
