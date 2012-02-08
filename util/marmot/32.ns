@@ -12,7 +12,6 @@ for {set i 0} {$i < $maxnodes} {incr i} {
 }
 
 tb-set-sync-server $node(0)
-set big-lan [$ns make-lan "$lanstr" 1Gb 0ms]
 
 $ns rtproto Static
 $ns run
