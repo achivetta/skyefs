@@ -27,6 +27,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <semaphore.h>
+
 #include <pvfs2.h>
 #include <pvfs2-sysint.h>
 #include <pvfs2-debug.h>
@@ -37,6 +39,8 @@ struct server_settings srv_settings;
 struct skye_options skye_options;
 
 static pthread_t listen_tid, split_tid;
+
+static sem_t flow_sem;
 
 // FIXME: rpcgen should put this in giga_rpc.h, but it doesn't. Why?
 extern void skye_rpc_prog_1(struct svc_req *rqstp, register SVCXPRT *transp);
@@ -86,7 +90,17 @@ static void * handler_thread(void *arg)
         }
 
         if (FD_ISSET(fd, &readfds)){
+            // poor man's flow control
+            
+            struct timespec ts;
+            gettimeofday((struct timeval*)&ts,NULL);
+            ts.tv_sec += 2;
+            ts.tv_nsec *= 1000;
+
+            int semret = sem_timedwait(&flow_sem, &ts);
             svc_getreqset(&readfds);
+            if (semret == 0)
+                sem_post(&flow_sem);
         }
     }
 
@@ -297,6 +311,7 @@ int main(int argc, char **argv)
     signal(SIGINT, sig_handler);
 
     cache_init();
+    sem_init(&flow_sem, 0, 32);
 
     pvfs_connect(fs_spec);
 
