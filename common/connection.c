@@ -19,12 +19,21 @@ static CLIENT **rpc_clients;
 struct PVFS_sys_mntent pvfs_mntent;
 PVFS_fs_id pvfs_fsid;
 
+char *myhostname = NULL;
+
 static int pvfs_generate_serverlist(){
     int ret, servercount, i;
     PVFS_credentials credentials; PVFS_util_gen_credentials(&credentials);
 
-    char hostname[HOST_NAME_MAX];
-    gethostname(hostname, HOST_NAME_MAX);
+    // What hostname are we using
+    if (!myhostname)
+        myhostname = getenv("HOSTNAME");
+    if (!myhostname){
+        myhostname = malloc(HOST_NAME_MAX + 1);
+        gethostname(myhostname, HOST_NAME_MAX);
+        myhostname[HOST_NAME_MAX] = '\0';
+    }
+
     skye_options.servernum = -1;
 
     ret = PVFS_mgmt_count_servers(pvfs_fsid,&credentials,PVFS_MGMT_META_SERVER,&servercount);
@@ -52,7 +61,7 @@ static int pvfs_generate_serverlist(){
 
         if (!servers[i]) return -ENOMEM; 
         
-        if (strcmp(servers[i],hostname) == 0)
+        if (strcmp(servers[i],myhostname) == 0)
             skye_options.servernum = i;
     }
 

@@ -17,4 +17,6 @@ int pvfs_connect(char *);
 
 int pvfs_get_mds(PVFS_object_ref *ref);
 
+extern char *myhostname;
+
 #endif
