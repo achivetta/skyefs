@@ -120,7 +120,7 @@ int rpc_connect(void)
 	struct timeval to;
         to.tv_sec = 60;
         to.tv_usec = 0;
-	clnt_control(&rpc_clients[i], CLSET_TIMEOUT, &to);
+	clnt_control(rpc_clients[i], CLSET_TIMEOUT, (char*)&to);
     }
     
     return 0;
