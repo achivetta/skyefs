@@ -116,6 +116,12 @@ int rpc_connect(void)
         if (ret < 0)
             return ret;
     }
+    for (i = 0; i < skye_options.servercount; i++){
+	struct timeval to;
+        to.tv_sec = 60;
+        to.tv_usec = 0;
+	clnt_control(&rpc_clients[i], CLSET_TIMEOUT, &to);
+    }
     
     return 0;
 }
