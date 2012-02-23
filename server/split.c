@@ -225,6 +225,7 @@ next_batch:
             clnt_perror(client, "RPC bucket remove failed");
             err_dump("Unable to inform new server of new bucket.");
         }
+        dbg_msg(stderr, "[%s] informed %d that it now has bucket %d", __func__, server, cindex);
     }
 
     dir->splitting_index = -1;
