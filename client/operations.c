@@ -6,65 +6,23 @@
 #include "client.h"
 
 #include <rpc/rpc.h>
-#include <fuse.h>
+#include <fuse_lowlevel.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <pvfs2-util.h>
 #include <assert.h>
 
 /* FIXME: see pvfs:src/apps/admin/pvfs2-cp.c for how to do permissions correctly
- */
-
-/* TODO: should the structure we are storing in the fuse_file_info->fh also have
+ * TODO: should the structure we are storing in the fuse_file_info->fh also have
  * credentials? */
 
 /* DANGER: depends on internals of PVFS struct
  * FIXME should this use PVFS_util_gen_credentials()? */
-static void gen_credentials(PVFS_credentials *credentials)
+static void gen_credentials(PVFS_credentials *credentials, fuse_req_t req)
 
 {
-    credentials->uid = fuse_get_context()->uid;
-    credentials->gid = fuse_get_context()->gid;
-}
-static int get_path_components(const char *path, char *fileName, char *dirName)
-{
-	const char *p = path;
-	if (!p || !fileName)
-		return -1;
-
-	if (strcmp(path, "/") == 0) {
-		strcpy(fileName, "/");
-		if (dirName)
-			strcpy(dirName, "/");
-
-		return 0;
-	}
-
-    int pathlen = strlen(path);
-
-    if (pathlen > MAX_PATHNAME_LEN)
-        return -ENAMETOOLONG;
-    
-    p += pathlen;
-	while ( (*p) != '/' && p != path)
-		p--; // Come back till '/'
-
-    if (pathlen - (int)(p - path) > MAX_FILENAME_LEN)
-        return -ENAMETOOLONG;
-
-    // Copy after slash till end into filename
-	strncpy(fileName, p+1, MAX_FILENAME_LEN); 
-	if (dirName) {
-		if (path == p)
-			strncpy(dirName, "/", 2);
-		else {
-            // Copy rest into dirpath 
-			strncpy(dirName, path, (int)(p - path )); 
-			dirName[(int)(p - path)] = '\0';
-		}
-	}
-
-	return 0;
+    credentials->uid = fuse_req_ctx(req)->uid;
+    credentials->gid = fuse_req_ctx(req)->gid;
 }
 
 static int get_server_for_file(struct skye_directory *dir, const char *name)
@@ -73,7 +31,6 @@ static int get_server_for_file(struct skye_directory *dir, const char *name)
 }
 
 //XXX: need a second parameter which is the bitmap returned in the RPC reply
-//
 static void update_client_mapping(struct skye_directory *dir, struct giga_mapping_t *mapping)
 {
     giga_update_cache(&dir->mapping,mapping);
@@ -124,6 +81,7 @@ bitmap:
     return ret;
 }
 
+#if 0
 /** Updates parent_ref to point to the bucket of specified child */
 static int partition(PVFS_credentials *credentails, PVFS_object_ref* ref, char* pathname)
 {
@@ -200,94 +158,51 @@ static int resolve(PVFS_credentials *credentials, const char* pathname, PVFS_obj
 
     return 0;
 }
+#endif
 
-static int pvfs_readdir(PVFS_credentials *credentials, PVFS_object_ref *ref, void *buf, fuse_fill_dir_t filler)
+void skye_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
+			     off_t offset, struct fuse_file_info *fi)
 {
-    int ret;
-    PVFS_sysresp_readdir rd_response;
-    unsigned int pvfs_dirent_incount = 32; // reasonable chank size
-    PVFS_ds_position token = PVFS_READDIR_START;
-
-    do {
-        char *cur_file = NULL;
-        unsigned int i;
-
-        memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
-        ret = PVFS_sys_readdir(*ref, token,
-                                pvfs_dirent_incount, credentials, &rd_response,
-                                PVFS_HINT_NULL);
-        if (ret < 0)
-            return pvfs2errno(ret);
-
-        for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
-            cur_file = rd_response.dirent_array[i].d_name;
-
-            if (filler(buf, cur_file, NULL, 0)){
-                break;
-            }
-        }
-        
-        //FIXME: use this incantation everywhere
-        token = rd_response.token;
-
-        if (rd_response.pvfs_dirent_outcount) {
-            free(rd_response.dirent_array);
-            rd_response.dirent_array = NULL;
-        }
-
-    } while (rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
-
-    return 0;
-}
-
-int skye_readdir(const char * path, void * buf, fuse_fill_dir_t filler, off_t offset,
-                 struct fuse_file_info *fi){
     (void)offset;
     (void)fi;
+    (void)size;
 
-    PVFS_object_ref ref;
-    PVFS_credentials credentials; gen_credentials(&credentials);
-    int ret;
+    PVFS_object_ref ref; ref.handle = ino; ref.fs_id = pvfs_fsid;
+    PVFS_credentials credentials; gen_credentials(&credentials, req);
 
-    if ( (ret = resolve(&credentials, path, &ref)) < 0 )
-        return ret;
+    char *buf = NULL;
+    size_t bufsize = 0;
 
-    // FIXME UGLY HACK, why does the continuation here not work? Is it because
-    // we issue a different PVFS_readdir() in between?
-    unsigned int pvfs_dirent_incount = 256; // reasonable chank size
-    PVFS_ds_position token = PVFS_READDIR_START;
-    PVFS_sysresp_readdir rd_response;
-    do {
-        unsigned int i;
-
-        memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
-        ret = PVFS_sys_readdir(ref, token, pvfs_dirent_incount, &credentials,
-                               &rd_response, PVFS_HINT_NULL);
-        if (ret < 0)
-            return pvfs2errno(ret);
-
-        for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
-            // FIXME: dirty hack to figure out what's a partition
-            if (rd_response.dirent_array[i].d_name[0] != 'p')
-                continue;
-
-
-            ref.handle = rd_response.dirent_array[i].handle; 
-            // FIXME: error handleing
-            pvfs_readdir(&credentials, &ref, buf, filler);
+    int add_to_buf(void *ctx, PVFS_dirent dirent){
+        (void)ctx;
+        /* FIXME double instead of realloc each time */
+        struct stat stbuf; memset(&stbuf, 0, sizeof(stbuf));
+        size_t oldsize = bufsize;
+        bufsize += fuse_add_direntry(req, NULL, 0, dirent.d_name, NULL, 0);
+        char *newp = realloc(buf, bufsize);
+        if (!newp) {
+            return -1;
         }
+        buf = newp;
+        stbuf.st_ino = dirent.handle;
+        fuse_add_direntry(req, buf + oldsize, bufsize - oldsize, dirent.d_name, &stbuf,
+                          bufsize);
+        return 0;
+    }
 
+    int recurse(void *ctx, PVFS_dirent dirent){
+        /* TODO could we use this anywhere else? */
+        if (dirent.d_name[0] != 'p')
+            return 0;
 
-        token = rd_response.token;
+        int (*callback)(void *, PVFS_dirent) = ctx;
+        PVFS_object_ref ref; ref.fs_id = pvfs_fsid; ref.handle = dirent.handle;
+        return pvfs_readdir(NULL, &credentials, &ref, callback);
+    }
 
-        if (rd_response.pvfs_dirent_outcount) {
-            free(rd_response.dirent_array);
-            rd_response.dirent_array = NULL;
-        }
+    pvfs_readdir(add_to_buf, &credentials, &ref, recurse);
 
-    } while (rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
-
-    return 0;
+    fuse_reply_buf(req, buf, bufsize);
 }
 
 /* function body taken from pvfs2fuse.c */
@@ -417,25 +332,45 @@ static int pvfs_getattr(PVFS_credentials *credentials, PVFS_object_ref *ref, str
     return 0;
 }
 
-int skye_getattr(const char *path, struct stat *stbuf)
+void skye_ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 {
-    PVFS_object_ref ref;
-    PVFS_credentials credentials; gen_credentials(&credentials);
+    PVFS_object_ref ref; ref.handle = ino; ref.fs_id = pvfs_fsid;
+    PVFS_credentials credentials; gen_credentials(&credentials, req);
+    struct stat stbuf; memset(&stbuf, 0, sizeof(stbuf));
     int ret;
+    (void)fi;
 
-    if ((ret = resolve(&credentials, path, &ref)) < 0)
-        return ret;
-
-    if ((ret = pvfs_getattr(&credentials, &ref, stbuf)) < 0)
-        return ret;
-
-    return 0;
+    if ((ret = pvfs_getattr(&credentials, &ref, &stbuf)) < 0)
+        fuse_reply_err(req, ENOENT);
+    else
+        fuse_reply_attr(req, &stbuf, 10);
 }
 
+/* FIXME: isn't there a way to both lookup and stat with PVFS? */
+void skye_ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
+{
+    PVFS_object_ref ref; ref.handle = parent; ref.fs_id = pvfs_fsid;
+    PVFS_credentials credentials; gen_credentials(&credentials, req);
+
+    int ret = lookup(&credentials, &ref, (char*)name);
+    if (ret < 0)
+        fuse_reply_err(req, ENOENT);
+
+    struct fuse_entry_param e;
+    memset(&e, 0, sizeof(e));
+    e.ino = ref.handle;
+    e.attr_timeout = 1.0;
+    e.entry_timeout = 1.0;
+    pvfs_getattr(&credentials, &ref, &e.attr);
+
+    fuse_reply_entry(req, &e);
+}
+
+#if 0
 int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
     PVFS_object_ref *ref;
-    PVFS_credentials credentials; gen_credentials(&credentials);
+    PVFS_credentials credentials; gen_credentials(&credentials, req);
 
     char filename[MAX_FILENAME_LEN] = {0};
     char pathname[MAX_PATHNAME_LEN] = {0};
@@ -753,52 +688,43 @@ int skye_utime(const char *path, struct utimbuf *timbuf)
 
     return 0;
 }
+#endif
 
-int skye_open(const char *path, struct fuse_file_info *fi)
+/* FIXME: we should verify that the file exists and such here */
+void skye_ll_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 {
-    PVFS_object_ref *ref;
-    PVFS_credentials credentials; gen_credentials(&credentials);
-    int ret;
-
-    if ((ref = malloc(sizeof(PVFS_object_ref))) == NULL)
-        return -ENOMEM;
-
-    bzero(ref,sizeof(PVFS_object_ref));
-
-    if ((ret = resolve(&credentials, path, ref)) < 0){
-        free(ref);
-        return ret;
-    }
-    fi->fh = (intptr_t) ref;
-
-    return 0;
+    PVFS_object_ref ref; ref.handle = ino; ref.fs_id = pvfs_fsid;
+    fi->fh = ref.handle;
+    fuse_reply_open(req, fi);
 }
 
-int skye_read(const char* path, char *buf, size_t size, off_t offset, 
-              struct fuse_file_info *fi)
+void skye_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
+			  off_t offset, struct fuse_file_info *fi)
 {
-    (void)path;
-
-    PVFS_object_ref *ref = (PVFS_object_ref*)fi->fh;
-    PVFS_credentials credentials; gen_credentials(&credentials);
+    PVFS_object_ref ref; ref.handle = ino; ref.fs_id = pvfs_fsid;
+    PVFS_credentials credentials; gen_credentials(&credentials, req);
     PVFS_Request mem_req, file_req;
     PVFS_sysresp_io resp_io;
     int ret;
+    char buf[size + 1];
+    (void)fi;
 
     file_req = PVFS_BYTE;
     ret = PVFS_Request_contiguous(size, PVFS_BYTE, &mem_req);
     if (ret < 0)
-        return pvfs2errno(ret);
+        fuse_reply_err(req, pvfs2errno(ret));
 
-    ret = PVFS_sys_read(*ref, file_req, offset, buf, mem_req, &credentials,
+    ret = PVFS_sys_read(ref, file_req, offset, buf, mem_req, &credentials,
                         &resp_io, PVFS_HINT_NULL);
     if (ret < 0)
-        return pvfs2errno(ret);
+        fuse_reply_err(req, pvfs2errno(ret));
 
     PVFS_Request_free(&mem_req);
-    return resp_io.total_completed;
+
+    fuse_reply_buf(req, buf, resp_io.total_completed);
 }
 
+#if 0
 int skye_write(const char* path, const char *buf, size_t size, off_t offset, 
               struct fuse_file_info *fi)
 {
@@ -825,3 +751,4 @@ int skye_write(const char* path, const char *buf, size_t size, off_t offset,
     PVFS_Request_free(&mem_req);
     return resp_io.total_completed;
 }
+#endif

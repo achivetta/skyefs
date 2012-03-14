@@ -16,6 +16,7 @@ void rpc_disconnect(void);
 int pvfs_connect(char *);
 
 int pvfs_get_mds(PVFS_object_ref *ref);
+int pvfs_readdir(void *ctx, PVFS_credentials *credentials, PVFS_object_ref *ref, int(callback)(void *ctx, PVFS_dirent));
 
 extern char *myhostname;
 

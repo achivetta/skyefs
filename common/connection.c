@@ -274,3 +274,38 @@ int pvfs_get_mds(PVFS_object_ref *ref){
     return i;
 }
 
+//FIXME: use this function everywhere
+int pvfs_readdir(void *ctx, PVFS_credentials *credentials, PVFS_object_ref *ref, int(callback)(void *ctx, PVFS_dirent))
+{
+    int ret;
+    PVFS_sysresp_readdir rd_response;
+    unsigned int pvfs_dirent_incount = 256; // reasonable chank size
+    PVFS_ds_position token = PVFS_READDIR_START;
+
+    do {
+        unsigned int i;
+
+        memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
+        ret = PVFS_sys_readdir(*ref, token,
+                                pvfs_dirent_incount, credentials, &rd_response,
+                                PVFS_HINT_NULL);
+        if (ret < 0)
+            return pvfs2errno(ret);
+
+        for (i = 0; i < rd_response.pvfs_dirent_outcount; i++) {
+            if (callback(ctx, rd_response.dirent_array[i]))
+                break;
+        }
+        
+        token = rd_response.token;
+
+        if (rd_response.pvfs_dirent_outcount) {
+            free(rd_response.dirent_array);
+            rd_response.dirent_array = NULL;
+        }
+
+    } while (rd_response.pvfs_dirent_outcount == pvfs_dirent_incount);
+
+    return 0;
+}
+
