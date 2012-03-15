@@ -12,6 +12,8 @@
 #include <pvfs2-util.h>
 #include <assert.h>
 
+#define min(x1,x2) ((x1) > (x2))? (x2):(x1)
+
 /* FIXME: see pvfs:src/apps/admin/pvfs2-cp.c for how to do permissions correctly
  * TODO: should the structure we are storing in the fuse_file_info->fh also have
  * credentials? */
@@ -178,33 +180,59 @@ static int resolve(PVFS_credentials *credentials, const char* pathname, PVFS_obj
 }
 #endif
 
-void skye_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
-			     off_t offset, struct fuse_file_info *fi)
+struct direntbuf {
+    char *buf;
+    size_t size;
+};
+
+void skye_ll_opendir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 {
-    (void)offset;
-    (void)fi;
-    (void)size;
+    (void)ino;
+    fi->fh = (uintptr_t)calloc(1,sizeof(struct direntbuf));
+    fuse_reply_open(req, fi);
+}
+void skye_ll_releasedir (fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
+{
+    (void)req;
+    (void)ino;
+    if (fi->fh && ((struct direntbuf*)fi->fh)->buf)
+        free(((struct direntbuf*)fi->fh)->buf);
+    if (fi->fh)
+        free((void*)fi->fh);
+}
+
+void skye_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, off_t offset,
+                     struct fuse_file_info *fi)
+{
+    struct direntbuf *db = (struct direntbuf*)fi->fh;
+
+    if (db->buf && offset > 0 && (unsigned long)offset < db->size)
+    {
+        fuse_reply_buf(req, db->buf, min(db->size - offset, size));
+        return;
+    } else if (db->buf && offset > 0 && (unsigned long)offset >= db->size) {
+        fuse_reply_buf(req, NULL, 0);
+        memset(db, 0, sizeof(struct direntbuf));
+        return;
+    }
 
     PVFS_credentials credentials; gen_credentials(&credentials, req);
     PVFS_object_ref ref; ref.handle = inode2handle(&credentials, ino); ref.fs_id = pvfs_fsid;
-
-    char *buf = NULL;
-    size_t bufsize = 0;
 
     int add_to_buf(void *ctx, PVFS_dirent dirent){
         (void)ctx;
         /* FIXME double instead of realloc each time */
         struct stat stbuf; memset(&stbuf, 0, sizeof(stbuf));
-        size_t oldsize = bufsize;
-        bufsize += fuse_add_direntry(req, NULL, 0, dirent.d_name, NULL, 0);
-        char *newp = realloc(buf, bufsize);
+        size_t oldsize = db->size;
+        db->size += fuse_add_direntry(req, NULL, 0, dirent.d_name, NULL, 0);
+        char *newp = realloc(db->buf, db->size);
         if (!newp) {
             return -1;
         }
-        buf = newp;
+        db->buf = newp;
         stbuf.st_ino = dirent.handle;
-        fuse_add_direntry(req, buf + oldsize, bufsize - oldsize, dirent.d_name, &stbuf,
-                          bufsize);
+        fuse_add_direntry(req, db->buf + oldsize, db->size - oldsize, dirent.d_name, &stbuf,
+                          db->size);
         return 0;
     }
 
@@ -220,7 +248,7 @@ void skye_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
 
     pvfs_readdir(add_to_buf, &credentials, &ref, recurse);
 
-    fuse_reply_buf(req, buf, bufsize);
+    fuse_reply_buf(req, db->buf, min(db->size, size));
 }
 
 /* function body taken from pvfs2fuse.c */

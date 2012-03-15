@@ -45,7 +45,9 @@ static struct fuse_lowlevel_ops skye_ll_oper = {
     .read      = skye_ll_read,
     .open      = skye_ll_open,
     .create    = skye_ll_create,
-    .mkdir     = skye_ll_mkdir
+    .mkdir     = skye_ll_mkdir,
+    .opendir   = skye_ll_opendir,
+    .releasedir = skye_ll_releasedir
 };
 
 int main(int argc, char *argv[])
@@ -63,9 +65,6 @@ int main(int argc, char *argv[])
         /** error parsing options */
         return -1;
 
-    fuse_opt_insert_arg(&args, 1, "-odirect_io");
-    fuse_opt_insert_arg(&args, 1, "-oattr_timeout=0");
-    fuse_opt_insert_arg(&args, 1, "-omax_write=524288");
     if ( getpid() == 0 )
         fuse_opt_insert_arg( &args, 1, "-oallow_other" );
     fuse_opt_insert_arg(&args, 1, "-s");

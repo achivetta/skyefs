@@ -14,4 +14,6 @@ void skye_ll_create(fuse_req_t req, fuse_ino_t parent, const char *filename,
                      mode_t mode, struct fuse_file_info *fi);
 void skye_ll_mkdir(fuse_req_t req, fuse_ino_t parent, const char *filename,
                mode_t mode);
+void skye_ll_opendir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi);
+void skye_ll_releasedir (fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi);
 #endif
