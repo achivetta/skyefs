@@ -43,7 +43,9 @@ static struct fuse_lowlevel_ops skye_ll_oper = {
     .lookup    = skye_ll_lookup,
     .readdir   = skye_ll_readdir,
     .read      = skye_ll_read,
-    .open      = skye_ll_open
+    .open      = skye_ll_open,
+    .create    = skye_ll_create,
+    .mkdir     = skye_ll_mkdir
 };
 
 int main(int argc, char *argv[])

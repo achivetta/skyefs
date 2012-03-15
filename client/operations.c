@@ -19,10 +19,28 @@
 /* DANGER: depends on internals of PVFS struct
  * FIXME should this use PVFS_util_gen_credentials()? */
 static void gen_credentials(PVFS_credentials *credentials, fuse_req_t req)
-
 {
     credentials->uid = fuse_req_ctx(req)->uid;
     credentials->gid = fuse_req_ctx(req)->gid;
+}
+
+static PVFS_handle inode2handle(PVFS_credentials *credentials, fuse_ino_t ino)
+{
+    static PVFS_handle pvfs_root_handle;
+    if (ino == FUSE_ROOT_ID) {
+        if (pvfs_root_handle == 0){
+            PVFS_sysresp_lookup lk_response;
+            memset(&lk_response, 0, sizeof(lk_response));
+            int ret = PVFS_sys_lookup(pvfs_fsid, (char *)"/", credentials, &lk_response,
+                                      PVFS2_LOOKUP_LINK_NO_FOLLOW, PVFS_HINT_NULL);
+            if ( ret < 0 )
+                return -1 * pvfs2errno(ret);
+            pvfs_root_handle = lk_response.ref.handle;
+        }
+        return pvfs_root_handle;
+    } else {
+        return ino;
+    }
 }
 
 static int get_server_for_file(struct skye_directory *dir, const char *name)
@@ -167,8 +185,8 @@ void skye_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
     (void)fi;
     (void)size;
 
-    PVFS_object_ref ref; ref.handle = ino; ref.fs_id = pvfs_fsid;
     PVFS_credentials credentials; gen_credentials(&credentials, req);
+    PVFS_object_ref ref; ref.handle = inode2handle(&credentials, ino); ref.fs_id = pvfs_fsid;
 
     char *buf = NULL;
     size_t bufsize = 0;
@@ -334,8 +352,8 @@ static int pvfs_getattr(PVFS_credentials *credentials, PVFS_object_ref *ref, str
 
 void skye_ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 {
-    PVFS_object_ref ref; ref.handle = ino; ref.fs_id = pvfs_fsid;
     PVFS_credentials credentials; gen_credentials(&credentials, req);
+    PVFS_object_ref ref; ref.handle = inode2handle(&credentials, ino); ref.fs_id = pvfs_fsid;
     struct stat stbuf; memset(&stbuf, 0, sizeof(stbuf));
     int ret;
     (void)fi;
@@ -346,143 +364,155 @@ void skye_ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
         fuse_reply_attr(req, &stbuf, 10);
 }
 
+int generate_fuse_entry(PVFS_credentials *credentials, struct fuse_entry_param *e, PVFS_object_ref *ref)
+{
+    memset(e, 0, sizeof(struct fuse_entry_param));
+    e->ino = ref->handle;
+    e->attr_timeout = 1.0;
+    e->entry_timeout = 1.0;
+    return pvfs_getattr(credentials, ref, &(e->attr));
+}
+
+/**
+ * Look up a directory entry by name and get its attributes.
+ *
+ * Valid replies:
+ *   fuse_reply_entry
+ *   fuse_reply_err
+ *
+ * @param req request handle
+ * @param parent inode number of the parent directory
+ * @param name the name to look up
+ */
 /* FIXME: isn't there a way to both lookup and stat with PVFS? */
 void skye_ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 {
-    PVFS_object_ref ref; ref.handle = parent; ref.fs_id = pvfs_fsid;
     PVFS_credentials credentials; gen_credentials(&credentials, req);
+    PVFS_object_ref ref; ref.handle = inode2handle(&credentials, parent); ref.fs_id = pvfs_fsid;
 
     int ret = lookup(&credentials, &ref, (char*)name);
     if (ret < 0)
         fuse_reply_err(req, ENOENT);
 
     struct fuse_entry_param e;
-    memset(&e, 0, sizeof(e));
-    e.ino = ref.handle;
-    e.attr_timeout = 1.0;
-    e.entry_timeout = 1.0;
-    pvfs_getattr(&credentials, &ref, &e.attr);
+    generate_fuse_entry(&credentials, &e, &ref);
 
     fuse_reply_entry(req, &e);
 }
 
-#if 0
-int skye_create(const char *path, mode_t mode, struct fuse_file_info *fi)
+/**
+ * Create and open a file
+ *
+ * Open flags (with the exception of O_NOCTTY) are available in
+ * fi->flags.
+ *
+ * Valid replies:
+ *   fuse_reply_create
+ *   fuse_reply_err
+ *
+ * @param req request handle
+ * @param parent inode number of the parent directory
+ * @param name to create
+ * @param mode file type and mode with which to create the new file
+ * @param fi file information
+ */
+void skye_ll_create(fuse_req_t req, fuse_ino_t parent, const char *filename, 
+                     mode_t mode, struct fuse_file_info *fi)
 {
-    PVFS_object_ref *ref;
     PVFS_credentials credentials; gen_credentials(&credentials, req);
-
-    char filename[MAX_FILENAME_LEN] = {0};
-    char pathname[MAX_PATHNAME_LEN] = {0};
-    int ret = 0, server_id;
-
-    if ((ret = get_path_components(path, filename, pathname)) < 0)
-        return ret;
-
-    if ((ref = malloc(sizeof(PVFS_object_ref))) == NULL)
-        return -ENOMEM;
-
-    if ((ret = resolve(&credentials, pathname, ref)) < 0){
-        goto exit2;
-    }
-
-    enum clnt_stat retval;
-    skye_lookup result;
+    PVFS_object_ref ref; ref.handle = inode2handle(&credentials, parent); ref.fs_id = pvfs_fsid;
     
-    struct skye_directory *dir = cache_fetch(ref);
+    int server_id;
+    struct skye_directory *dir = cache_fetch(&ref);
     if (!dir){
-        ret = -EIO;
-        goto exit2;
+        fuse_reply_err(req,EIO);
     }
     
 bitmap: 
     server_id = get_server_for_file(dir, filename);
     CLIENT *rpc_client = get_connection(server_id);
+    skye_lookup result;
 
-    retval = skye_rpc_create_1(credentials, *ref, filename, mode, &result, rpc_client);
+    enum clnt_stat retval = skye_rpc_create_1(credentials, ref, (char*)filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC create failed");
-        ret = -EIO;
-        goto exit1;
+        fuse_reply_err(req,EIO);
+        goto exit;
 	}
 
     if (result.errnum == -EAGAIN){
         update_client_mapping(dir, &result.skye_lookup_u.bitmap);
         goto bitmap;
     } else if (result.errnum < 0){
-        ret = result.errnum;
-        goto exit1;
-    } else {
-        ret = result.errnum;
+        fuse_reply_err(req,-1 * result.errnum);
+        goto exit;
     }
 
-    memcpy(ref, &result.skye_lookup_u.ref, sizeof(PVFS_object_ref));
+    fi->fh = result.skye_lookup_u.ref.handle;
 
-    fi->fh = (intptr_t) ref;
+    struct fuse_entry_param e;
+    generate_fuse_entry(&credentials, &e, &result.skye_lookup_u.ref);
 
-exit1:
+    fuse_reply_create(req, &e, fi);
+
+exit:
     cache_return(dir);
-
-    return ret;
-
-exit2:
-
-    free(ref);
-
-    return ret;
 }
 
-int skye_mkdir(const char * path, mode_t mode)
+/**
+ * Create a directory
+ *
+ * Valid replies:
+ *   fuse_reply_entry
+ *   fuse_reply_err
+ *
+ * @param req request handle
+ * @param parent inode number of the parent directory
+ * @param name to create
+ * @param mode with which to create the new file
+ */
+void skye_ll_mkdir(fuse_req_t req, fuse_ino_t parent, const char *filename,
+               mode_t mode)
 {
-    PVFS_object_ref ref;
-    PVFS_credentials credentials; gen_credentials(&credentials);
+    PVFS_credentials credentials; gen_credentials(&credentials, req);
+    PVFS_object_ref ref; ref.handle = inode2handle(&credentials, parent); ref.fs_id = pvfs_fsid;
 
-    char filename[MAX_FILENAME_LEN] = {0};
-    char pathname[MAX_PATHNAME_LEN] = {0};
-    int ret = 0, server_id;
-
-    if ((ret = get_path_components(path, filename, pathname)) < 0)
-        return ret;
-
-    if ((ret = resolve(&credentials, pathname, &ref)) < 0){
-        return ret;
-    }
-
-    enum clnt_stat retval;
-    skye_result result;
-    
+    int server_id;
     struct skye_directory *dir = cache_fetch(&ref);
     if (!dir){
-        return -EIO;
+        fuse_reply_err(req,EIO);
     }
     
 bitmap: 
-    server_id = get_server_for_file(dir, pathname);
+    server_id = get_server_for_file(dir, filename);
     CLIENT *rpc_client = get_connection(server_id);
+    skye_lookup result;
 
-    retval = skye_rpc_mkdir_1(credentials, ref, filename, mode, &result, rpc_client);
+    enum clnt_stat retval = skye_rpc_mkdir_1(credentials, ref, (char*)filename, mode, &result, rpc_client);
     if (retval != RPC_SUCCESS) {
 		clnt_perror (rpc_client, "RPC mkdir failed");
-        ret = -EIO;
+        fuse_reply_err(req,EIO);
         goto exit;
 	}
 
     if (result.errnum == -EAGAIN){
-        update_client_mapping(dir, &result.skye_result_u.bitmap);
+        update_client_mapping(dir, &result.skye_lookup_u.bitmap);
         goto bitmap;
     } else if (result.errnum < 0){
-        ret = result.errnum;
+        fuse_reply_err(req,-1 * result.errnum);
         goto exit;
-    } else {
-        ret = result.errnum;
     }
+
+    struct fuse_entry_param e;
+    generate_fuse_entry(&credentials, &e, &result.skye_lookup_u.ref);
+
+    fuse_reply_entry(req, &e);
 
 exit:
     cache_return(dir);
-
-    return ret;
 }
 
+#if 0
 int skye_rename(const char *src_path, const char *dst_path)
 {
     PVFS_credentials credentials; gen_credentials(&credentials);
@@ -693,7 +723,8 @@ int skye_utime(const char *path, struct utimbuf *timbuf)
 /* FIXME: we should verify that the file exists and such here */
 void skye_ll_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 {
-    PVFS_object_ref ref; ref.handle = ino; ref.fs_id = pvfs_fsid;
+    PVFS_credentials credentials; gen_credentials(&credentials, req);
+    PVFS_object_ref ref; ref.handle = inode2handle(&credentials, ino); ref.fs_id = pvfs_fsid;
     fi->fh = ref.handle;
     fuse_reply_open(req, fi);
 }
@@ -701,8 +732,8 @@ void skye_ll_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 void skye_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 			  off_t offset, struct fuse_file_info *fi)
 {
-    PVFS_object_ref ref; ref.handle = ino; ref.fs_id = pvfs_fsid;
     PVFS_credentials credentials; gen_credentials(&credentials, req);
+    PVFS_object_ref ref; ref.handle = inode2handle(&credentials, ino); ref.fs_id = pvfs_fsid;
     PVFS_Request mem_req, file_req;
     PVFS_sysresp_io resp_io;
     int ret;

@@ -275,7 +275,7 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
 bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
                             skye_pathname dirname, mode_t mode, 
-                            skye_result *result, struct svc_req *rqstp)
+                            skye_lookup *result, struct svc_req *rqstp)
 {
     (void)rqstp;
     int rc;
@@ -287,7 +287,7 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         return true;
     }
 
-    if ((rc = enter_bucket(&creds, dir, (char*)dirname, &parent, &(result->skye_result_u.bitmap))) < 0){
+    if ((rc = enter_bucket(&creds, dir, (char*)dirname, &parent, &(result->skye_lookup_u.bitmap))) < 0){
         result->errnum = rc;
         cache_return(dir);
         return true;
@@ -320,6 +320,7 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     dirname = "p00000";
     rc = pvfs_mkdir_server(&creds, &parent, dirname, &attr, server, NULL);
     result->errnum = rc;
+    result->skye_lookup_u.ref = resp_mkdir.ref;
 
     cache_return(dir);
 
