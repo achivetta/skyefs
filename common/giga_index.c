@@ -385,13 +385,13 @@ index_t giga_get_index_for_file(struct giga_mapping_t *mapping,
 // or should be searched.
 //
 index_t giga_get_server_for_file(struct giga_mapping_t *mapping, 
-                                const char *filename){
+                                const char *filename) {
     index_t index = giga_get_index_for_file(mapping,filename);
     return giga_get_server_for_index(mapping, index);
 }
 
 index_t giga_get_server_for_index(struct giga_mapping_t *mapping, 
-                                  index_t index){
+                                  index_t index) {
     return (index + mapping->zeroth_server) % mapping->server_count;
 }
 
