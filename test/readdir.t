@@ -26,7 +26,7 @@ done
 sort -g $n1 > $n3
 mv $n3 $n2
 
-${fstest} readdir . | grep -v fstest > $n2
+${fstest} readdir . | grep -v fstest | grep '[0-9]' > $n2
 sort -g $n2 > $n3
 mv $n3 $n2
 
