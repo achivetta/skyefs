@@ -1,7 +1,7 @@
 include ../Makefile.inc
 
 CFLAGS += -iquote ..
-LDFLAGS += -lpthread -lpvfs2 `pkg-config fuse --libs` -lssl
+LDFLAGS += -lpthread -lpvfs2 `pkg-config fuse --libs` /usr/lib/libssl.so.0.9.8
 
 TARGETS = ../skye_client
 
