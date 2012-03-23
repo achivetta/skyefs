@@ -199,9 +199,9 @@ void skye_ll_releasedir (fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *
         free(((struct direntbuf*)fi->fh)->buf);
     if (fi->fh)
         free((void*)fi->fh);
+    fuse_reply_err(req, 0);
 }
 
-void skye_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, off_t offset,
                      struct fuse_file_info *fi)
 {
     struct direntbuf *db = (struct direntbuf*)fi->fh;
@@ -419,8 +419,10 @@ void skye_ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     PVFS_object_ref ref; ref.handle = inode2handle(&credentials, parent); ref.fs_id = pvfs_fsid;
 
     int ret = lookup(&credentials, &ref, (char*)name);
-    if (ret < 0)
+    if (ret < 0){
         fuse_reply_err(req, ENOENT);
+        return;
+    }
 
     struct fuse_entry_param e;
     generate_fuse_entry(&credentials, &e, &ref);
@@ -454,6 +456,7 @@ void skye_ll_create(fuse_req_t req, fuse_ino_t parent, const char *filename,
     struct skye_directory *dir = cache_fetch(&ref);
     if (!dir){
         fuse_reply_err(req,EIO);
+        return;
     }
     
 bitmap: 
@@ -509,6 +512,7 @@ void skye_ll_mkdir(fuse_req_t req, fuse_ino_t parent, const char *filename,
     struct skye_directory *dir = cache_fetch(&ref);
     if (!dir){
         fuse_reply_err(req,EIO);
+        return;;
     }
     
 bitmap: 
@@ -770,13 +774,17 @@ void skye_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 
     file_req = PVFS_BYTE;
     ret = PVFS_Request_contiguous(size, PVFS_BYTE, &mem_req);
-    if (ret < 0)
+    if (ret < 0){
         fuse_reply_err(req, pvfs2errno(ret));
+        return;
+    }
 
     ret = PVFS_sys_read(ref, file_req, offset, buf, mem_req, &credentials,
                         &resp_io, PVFS_HINT_NULL);
-    if (ret < 0)
+    if (ret < 0){
         fuse_reply_err(req, pvfs2errno(ret));
+        return;
+    }
 
     PVFS_Request_free(&mem_req);
 
