@@ -11,3 +11,4 @@ skye-ls
 common.a
 test/fstest
 util/createthr
+data/
