@@ -24,7 +24,7 @@ typedef int index_t;                    // Index is the position in the bitmap
 #define SPLIT_T_NUM_SERVERS_BOUND   3333
 #define SPLIT_T_NEXT_HIGHEST_POW2   4444
 
-#define SPLIT_TYPE                  SPLIT_T_NO_BOUND
+#define SPLIT_TYPE                  SPLIT_T_NUM_SERVERS_BOUND
 
 #define MAX_BKTS_PER_SERVER         2 
 
