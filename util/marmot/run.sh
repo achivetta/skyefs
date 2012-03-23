@@ -61,7 +61,7 @@ sleep 10
 
 echo "$hostname: Started sync for skye_client STARTUP"
 if /usr/testbed/bin/emulab-sync -m; then
-	mkdir /tmp/skye_mnt_$i/0
+	mkdir /tmp/skye_mnt_1/0
 	/usr/testbed/bin/emulab-sync -i 31 -n client-$1
 else
 	/usr/testbed/bin/emulab-sync -n client-$1
