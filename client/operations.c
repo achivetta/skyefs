@@ -664,7 +664,7 @@ bitmap:
         update_client_mapping(dir, &result.skye_result_u.bitmap);
         goto bitmap;
     } else if (result.errnum < 0){
-        ret = result.errnum;
+        ret = -1 * result.errnum;
     } else {
         ret = 0;
     }

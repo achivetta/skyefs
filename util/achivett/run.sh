@@ -24,7 +24,7 @@ ulimit -c 10000
 echo "$hostname: Starting skye_server."
 
 cd ~/skyefs_deploy
-./skye_server -f 'tcp://pvfs1:3334/pvfs2-fs' 
+./skye_server -f 'tcp://pvfs1:3334/pvfs2-fs' &
 disown %1
 
 sleep 5
@@ -32,10 +32,10 @@ sleep 5
 echo "$hostname: Starting skye_client."
 
 for i in 1; do
-	fusermount -u /tmp/skye_mnt_$i || true
+	sudo umount /tmp/skye_mnt_$i || true
 	sudo rm -rf /tmp/skye_mnt_$i
 	mkdir -p /tmp/skye_mnt_$i
-	./skye_client -o pvfs=tcp://node-0.skyefs.testbed:3334/pvfs2-fs -f -s /tmp/skye_mnt_$i 
+	./skye_client -o pvfs=tcp://pvfs1:3334/pvfs2-fs -f -s /tmp/skye_mnt_$i &
 	disown %1
 done
 
@@ -44,6 +44,6 @@ sleep 5
 echo "$hostname: Starting Workload."
 
 for i in 1; do
-	./util/createthr /tmp/skye_mnt_$i/0 4000 
+	./util/createthr /tmp/skye_mnt_$i/0 4000  &
 	disown %1
 done
