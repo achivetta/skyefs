@@ -40,13 +40,19 @@ static struct fuse_lowlevel_ops skye_ll_oper = {
     .init      = skye_init,
     .destroy   = skye_destroy,
     .getattr   = skye_ll_getattr,
+    .setattr = skye_ll_setattr,
     .lookup    = skye_ll_lookup,
     .readdir   = skye_ll_readdir,
     .read      = skye_ll_read,
+    .write      = skye_ll_write,
     .open      = skye_ll_open,
     .create    = skye_ll_create,
+    .mknod    = skye_ll_mknod,
     .mkdir     = skye_ll_mkdir,
     .opendir   = skye_ll_opendir,
+    .rename = skye_ll_rename,
+    .unlink = skye_ll_unlink,
+    .rmdir = skye_ll_rmdir,
     .releasedir = skye_ll_releasedir
 };
 
