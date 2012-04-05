@@ -108,6 +108,8 @@ index_t giga_get_server_for_file(struct giga_mapping_t *mapping,
                                  const char *file_name);
 index_t giga_get_server_for_index(struct giga_mapping_t *mapping,
                                   index_t index);
+index_t giga_get_bucket_num_for_server(struct giga_mapping_t *mapping,
+                                  index_t index);
 
 // FIXME: what's this for?
 index_t giga_get_index_for_backup(index_t index); 

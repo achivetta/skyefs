@@ -395,6 +395,10 @@ index_t giga_get_server_for_index(struct giga_mapping_t *mapping,
     return (index + mapping->zeroth_server) % mapping->server_count;
 }
 
+index_t giga_get_bucket_num_for_server(struct giga_mapping_t *mapping, index_t index){
+    return index % mapping->server_count;
+}
+
 // Check whether an existing file needs to be migrated to the newly split bkt.
 // Pass the "index" of the current bucket. 
 // Return ZERO, if the file stays in the bucket.

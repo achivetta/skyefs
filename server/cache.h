@@ -31,6 +31,13 @@ struct skye_directory {
 
     /* The hashtable handle */
     UT_hash_handle hh;
+
+    /* The cache of partition handles.
+     * We are delibrarely racy here.  Either a slot is filled or not.  It's okay
+     * if we fill it twice.
+     */
+    int partition_handles_length;
+    PVFS_handle *partition_handles;
 };
 
 /* initialize the directory cache */

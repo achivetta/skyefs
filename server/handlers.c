@@ -18,6 +18,39 @@
 #include <pvfs2-sysint.h>
 #include <pvfs2-mgmt.h>
 
+static PVFS_handle get_partition_handle(PVFS_credentials *creds, struct skye_directory *dir, index_t index)
+{
+    index_t bucket_number = giga_get_bucket_num_for_server(&dir->mapping, index);
+
+    if (bucket_number >= dir->partition_handles_length){
+        dir->partition_handles = realloc(dir->partition_handles, dir->partition_handles_length * sizeof(PVFS_handle) * 2);
+        assert(dir->partition_handles); // FIXME: handle the allocation error
+        int i;
+        for (i = dir->partition_handles_length; i < dir->partition_handles_length * 2; i++)
+            dir->partition_handles[i] = 0;
+        dir->partition_handles_length = dir->partition_handles_length * 2;
+    }
+
+    if (dir->partition_handles[bucket_number] != 0)
+        return dir->partition_handles[bucket_number];
+
+    char physical_path[MAX_LEN];
+    snprintf(physical_path, MAX_LEN, "p%05d", index);
+
+    PVFS_sysresp_lookup lk_response;
+    memset(&lk_response, 0, sizeof(lk_response));
+    int ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, dir->handle,
+                              creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
+                              PVFS_HINT_NULL);
+
+    // FIXME: There's an error path here that diserves more consideration. Why
+    // did we fail?
+    assert(ret == 0);
+
+    dir->partition_handles[bucket_number] = lk_response.ref.handle;
+    return dir->partition_handles[bucket_number];
+}
+
 static int enter_bucket(PVFS_credentials *creds, struct skye_directory *dir, const char *name, PVFS_object_ref *handle, skye_bitmap *bitmap)
 {
     int index = giga_get_index_for_file(&(dir->mapping), name);
@@ -37,23 +70,27 @@ static int enter_bucket(PVFS_credentials *creds, struct skye_directory *dir, con
         int cindex = giga_index_for_splitting(&dir->mapping, index);
         if (giga_file_migration_status(name, cindex))
             index = cindex;
+
+        char physical_path[MAX_LEN];
+        snprintf(physical_path, MAX_LEN, "p%05d", index);
+
+        PVFS_sysresp_lookup lk_response;
+
+        memset(&lk_response, 0, sizeof(lk_response));
+        int ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, *handle,
+                                      creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
+                                      PVFS_HINT_NULL);
+
+        ret =  -1 * PVFS_get_errno_mapping(ret);
+
+        *handle = lk_response.ref;
+        return ret;
+    } else {
+        *handle = dir->handle;
+        handle->handle = get_partition_handle(creds, dir, index);
+        return 0;
     }
 
-    char physical_path[MAX_LEN];
-    snprintf(physical_path, MAX_LEN, "p%05d", index);
-
-    PVFS_sysresp_lookup lk_response;
-
-    memset(&lk_response, 0, sizeof(lk_response));
-    int ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, *handle,
-                              creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
-                              PVFS_HINT_NULL);
-
-    ret =  -1 * PVFS_get_errno_mapping(ret);
-
-    *handle = lk_response.ref;
-
-    return ret;
 }
 
 static int isdir(PVFS_credentials *creds, PVFS_object_ref *handle)
@@ -104,7 +141,6 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
     int index, server;
     index = giga_get_index_for_file(&dir->mapping, (const char*)path);
-gotindex:
     server = giga_get_server_for_index(&dir->mapping, index);
 
     if (server != skye_options.servernum){
@@ -113,14 +149,14 @@ gotindex:
         goto exit;
     }
 
-    char physical_path[MAX_LEN];
-    snprintf(physical_path, MAX_LEN, "p%05d/%s", index, (const char*)path);
+    PVFS_handle old_parent = parent.handle;
+    parent.handle = get_partition_handle(&creds, dir, index);
 
     PVFS_sysresp_lookup lk_response;
     int ret;
 
     memset(&lk_response, 0, sizeof(lk_response));
-    ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, parent,
+    ret = PVFS_sys_ref_lookup(pvfs_fsid, path, parent,
                               &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
                               PVFS_HINT_NULL);
 
@@ -129,9 +165,21 @@ gotindex:
     result->skye_lookup_u.ref = lk_response.ref;
 
     /* If we are currently splitting, try again in the child directory */
+    // FIXME: this is vulnerable to repeated splits
     if (result->errnum == -ENOENT && index == dir->splitting_index){
         index = giga_index_for_splitting(&dir->mapping, index);
-        goto gotindex;
+        parent.handle = old_parent;
+
+        char physical_path[MAX_LEN];
+        snprintf(physical_path, MAX_LEN, "p%05d/%s", index, (const char*)path);
+
+        memset(&lk_response, 0, sizeof(lk_response));
+        ret = PVFS_sys_ref_lookup(pvfs_fsid, path, parent,
+                                  &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
+                                  PVFS_HINT_NULL);
+
+        result->errnum = -1 * PVFS_get_errno_mapping(ret);
+        result->skye_lookup_u.ref = lk_response.ref;
     }
 
 exit:
@@ -171,6 +219,7 @@ gotindex:
     PVFS_sysresp_lookup lk_response;
     int ret;
 
+    // FIXME: Cache the partition!
     memset(&lk_response, 0, sizeof(lk_response));
     ret = PVFS_sys_ref_lookup(pvfs_fsid, physical_path, parent,
                               &creds, &lk_response, PVFS2_LOOKUP_LINK_NO_FOLLOW,
