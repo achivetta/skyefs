@@ -22,7 +22,7 @@ static PVFS_handle get_partition_handle(PVFS_credentials *creds, struct skye_dir
 {
     index_t bucket_number = giga_get_bucket_num_for_server(&dir->mapping, index);
 
-    if (bucket_number >= dir->partition_handles_length){
+    if (bucket_number >= dir->partition_handles_length - 1){
         dir->partition_handles = realloc(dir->partition_handles, dir->partition_handles_length * sizeof(PVFS_handle) * 2);
         assert(dir->partition_handles); // FIXME: handle the allocation error
         int i;

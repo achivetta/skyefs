@@ -70,8 +70,8 @@ static struct skye_directory* new_directory(PVFS_object_ref *handle){
     if (!dir)
         return NULL;
 
-    dir->partition_handles = calloc(MAX_BKTS_PER_SERVER, sizeof(PVFS_handle));
-    dir->partition_handles_length = MAX_BKTS_PER_SERVER;
+    dir->partition_handles = calloc(MAX_BKTS_PER_SERVER * 2, sizeof(PVFS_handle));
+    dir->partition_handles_length = MAX_BKTS_PER_SERVER * 2;
 
     if (pthread_rwlock_init(&dir->rwlock, &rwlockattr)){
         free(dir);

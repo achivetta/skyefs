@@ -315,9 +315,12 @@ int main(int argc, char **argv)
 
     pvfs_connect(fs_spec);
 
+    if (skye_options.servercount == 1)
+        skye_options.servernum = 0;
     if (skye_options.servernum == -1){
         err_quit("ERROR: server hostname does not match any server in PVFS server list.");
     }
+
 
     if (skye_options.servernum == 0)
         create_root_partition();
