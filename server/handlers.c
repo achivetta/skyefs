@@ -114,6 +114,23 @@ static int isdir(PVFS_credentials *creds, PVFS_object_ref *handle)
     return 0;
 } 
 
+static sem_t flow_sem;
+static int flow_start()
+{
+    struct timespec ts;
+    gettimeofday((struct timeval*)&ts,NULL);
+    ts.tv_sec += 2;
+    ts.tv_nsec *= 1000;
+
+    return sem_timedwait(&flow_sem, &ts);
+}
+
+static void flow_stop(int start_ret)
+{
+    if (start_ret == 0)
+        sem_post(&flow_sem);
+}
+
 bool_t skye_rpc_init_1_svc(bool_t *result, struct svc_req *rqstp)
 {
     (void)rqstp;
@@ -132,6 +149,7 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 {
     (void)rqstp;
 
+    int flow = flow_start();
     struct skye_directory *dir = cache_fetch(&parent);
     if (!dir){
         dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, parent.handle);
@@ -184,6 +202,7 @@ bool_t skye_rpc_lookup_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
 exit:
     cache_return(dir);
+    flow_stop(flow);
 
     return true;;
 }
@@ -195,6 +214,7 @@ bool_t skye_rpc_partition_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 {
     (void)rqstp;
 
+    int flow = flow_start();
     struct skye_directory *dir = cache_fetch(&parent);
     if (!dir){
         dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, parent.handle);
@@ -251,6 +271,7 @@ gotindex:
 
 exit:
     cache_return(dir);
+    flow_stop(flow);
 
     return true;
 }
@@ -265,6 +286,7 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     time_t starttime, endtime;
     starttime = time(NULL);
 
+    int flow = flow_start();
     struct skye_directory *dir = cache_fetch(&parent);
     if (!dir){
         dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, parent.handle);
@@ -275,6 +297,7 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     if ((rc = enter_bucket(&creds, dir, (char*)filename, &parent, &(result->skye_lookup_u.bitmap))) < 0){
         result->errnum = rc;
         cache_return(dir);
+        flow_stop(flow);
         return true;
     }
 
@@ -299,6 +322,7 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
         else
             result->errnum = -1 * PVFS_get_errno_mapping(rc);
         cache_return(dir);
+        flow_stop(flow);
         return true;
     }
 
@@ -311,6 +335,7 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
             perform_split(&dir->handle, index);
     }
     cache_return(dir);
+    flow_stop(flow);
 
     result->errnum = 0;
     result->skye_lookup_u.ref = resp_create.ref;
@@ -331,16 +356,19 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     (void)rqstp;
     int rc;
 
+    int flow = flow_start();
     struct skye_directory *dir = cache_fetch(&parent);
     if (!dir){
         dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, parent.handle);
         result->errnum = -EIO;
+        flow_stop(flow);
         return true;
     }
 
     if ((rc = enter_bucket(&creds, dir, (char*)dirname, &parent, &(result->skye_lookup_u.bitmap))) < 0){
         result->errnum = rc;
         cache_return(dir);
+        flow_stop(flow);
         return true;
     }
 
@@ -359,6 +387,7 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     if (rc != 0){
         result->errnum = -1 * PVFS_get_errno_mapping(rc);
         cache_return(dir);
+        flow_stop(flow);
         return true;
     }
 
@@ -374,6 +403,7 @@ bool_t skye_rpc_mkdir_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     result->skye_lookup_u.ref = resp_mkdir.ref;
 
     cache_return(dir);
+    flow_stop(flow);
 
 	return true;
 }
@@ -467,10 +497,12 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     (void)rqstp;
     int rc;
 
+    int flow = flow_start();
     struct skye_directory *dir = cache_fetch(&parent);
     if (!dir){
         dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, parent.handle);
         result->errnum = -EIO;
+        flow_stop(flow);
         return true;
     }
 
@@ -516,6 +548,7 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
         cache_destroy(dir);
         dir = NULL;
+        flow_stop(flow);
 
         return true;
     }
@@ -525,6 +558,7 @@ bool_t skye_rpc_remove_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
 
 exit:
     cache_return(dir);
+    flow_stop(flow);
     
 	return true;
 }
@@ -538,16 +572,19 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
     (void)rqstp;
     int rc;
 
+    int flow = flow_start();
     struct skye_directory *dir = cache_fetch(&dst_parent);
     if (!dir){
         dbg_msg(stderr, "[%s] Unable to fetch %lu from cache", __func__, dst_parent.handle);
         result->errnum = -EIO;
+        flow_stop(flow);
         return true;
     }
 
     if ((rc = enter_bucket(&creds, dir, (char*)dst_name, &dst_parent, &(result->skye_result_u.bitmap))) < 0){
         result->errnum = rc;
         cache_return(dir);
+        flow_stop(flow);
         return true;
     }
 
@@ -556,6 +593,7 @@ bool_t skye_rpc_rename_1_svc(PVFS_credentials creds,
     result->errnum = -1 * PVFS_get_errno_mapping(rc);
 
     cache_return(dir);
+    flow_stop(flow);
 	return true;
 }
 

@@ -40,8 +40,6 @@ struct skye_options skye_options;
 
 static pthread_t listen_tid, split_tid;
 
-static sem_t flow_sem;
-
 // FIXME: rpcgen should put this in giga_rpc.h, but it doesn't. Why?
 extern void skye_rpc_prog_1(struct svc_req *rqstp, register SVCXPRT *transp);
 
@@ -90,17 +88,7 @@ static void * handler_thread(void *arg)
         }
 
         if (FD_ISSET(fd, &readfds)){
-            // poor man's flow control
-            
-            struct timespec ts;
-            gettimeofday((struct timeval*)&ts,NULL);
-            ts.tv_sec += 2;
-            ts.tv_nsec *= 1000;
-
-            int semret = sem_timedwait(&flow_sem, &ts);
             svc_getreqset(&readfds);
-            if (semret == 0)
-                sem_post(&flow_sem);
         }
     }
 
