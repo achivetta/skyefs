@@ -303,7 +303,9 @@ bool_t skye_rpc_create_1_svc(PVFS_credentials creds, PVFS_object_ref parent,
     }
 
 
-    if (dir->splitting_index == -1){
+    // Only check to see if we need to split some of the time
+    static int create_count;
+    if (dir->splitting_index == -1 && (create_count++ % 100 == 0)){
         int index = giga_get_index_for_file(&dir->mapping, filename);
         if (giga_is_splittable(&dir->mapping, index) && isdir_overflow(&creds, &parent))
             perform_split(&dir->handle, index);
