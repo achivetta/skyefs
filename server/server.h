@@ -1,6 +1,7 @@
 #ifndef SERVER_H
 #define SERVER_H   
 
+#include <semaphore.h>
 #include <pvfs2-sysint.h>
 
 #define NUM_BACKLOG_CONN 128

@@ -114,12 +114,12 @@ static int isdir(PVFS_credentials *creds, PVFS_object_ref *handle)
     return 0;
 } 
 
-static sem_t flow_sem;
+sem_t flow_sem;
 static int flow_start()
 {
     struct timespec ts;
     gettimeofday((struct timeval*)&ts,NULL);
-    ts.tv_sec += 2;
+    ts.tv_sec += 4;
     ts.tv_nsec *= 1000;
 
     return sem_timedwait(&flow_sem, &ts);
