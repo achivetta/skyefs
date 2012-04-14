@@ -147,10 +147,7 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
 
     dir->splitting_index = pindex;
 
-    /*
-    cache_return(dir);
-    dir = NULL;
-    */
+    pthread_rwlock_unlock(&dir->rwlock);
     
     //(4) readdir() old partition, rename the files that will move
 
@@ -177,6 +174,8 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
             if (!rd_response.pvfs_dirent_outcount) goto next_batch;
 
             /* issue requests */
+            pthread_rwlock_wrlock(&dir->rwlock);
+
             for (i = 0; (unsigned int)i < rd_response.pvfs_dirent_outcount; i++) {
                 char *name = rd_response.dirent_array[i].d_name;
 
@@ -201,6 +200,8 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
             free(rd_response.dirent_array);
             rd_response.dirent_array = NULL;
 
+            pthread_rwlock_unlock(&dir->rwlock);
+
 next_batch:
             if (!token)
                 token = rd_response.pvfs_dirent_outcount - 1;
@@ -216,6 +217,8 @@ next_batch:
     dbg_msg(stderr, "[%s] completed move of files in %lu/%d", __func__, parent.handle, pindex);
 
     //(5) after all entries have been moved, send RPC to server
+    
+    pthread_rwlock_wrlock(&dir->rwlock);
     
     // FIXME: if this fails?!?
     if (server != skye_options.servernum){
