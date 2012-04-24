@@ -69,7 +69,9 @@ fi
 echo "$hostname: Finished sync for skye_client STARTUP"
 
 for i in `seq 1 $clients`; do
-	./util/createthr /tmp/skye_mnt_$1_$i/0 32000 > ~/logs/createthr-${hostname}_$i.out 2> ~/logs/createthr-${hostname}_$i.log &
+	./util/createthr /tmp/skye_mnt_$1_$i/0 32000 > ~/logs/createthr-${hostname}_1$i.out 2> ~/logs/createthr-${hostname}_1$i.log &
+	disown %1
+	./util/createthr /tmp/skye_mnt_$1_$i/0 32000 > ~/logs/createthr-${hostname}_2$i.out 2> ~/logs/createthr-${hostname}_2$i.log &
 	disown %1
 done
 
