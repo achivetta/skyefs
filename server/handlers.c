@@ -119,7 +119,7 @@ static int flow_start()
 {
     struct timespec ts;
     gettimeofday((struct timeval*)&ts,NULL);
-    ts.tv_sec += 4;
+    ts.tv_sec += 50;
     ts.tv_nsec *= 1000;
 
     return sem_timedwait(&flow_sem, &ts);
