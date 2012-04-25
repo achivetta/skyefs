@@ -1,0 +1,1 @@
+date > stacks; while true; do for hostname in node-{0..31}.skyefs.gigaplus.marmot.pdl.cmu.local; do echo $hostname:; ssh $hostname 'sudo gdb -ex "set pagination 0" -ex "thread apply all bt" -batch -p `pidof -s skye_server`' 2>/dev/null | tee -a stacks | grep '^#0' | sort | uniq -c | sort -n; echo; done; done
