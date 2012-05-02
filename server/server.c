@@ -299,7 +299,7 @@ int main(int argc, char **argv)
     signal(SIGINT, sig_handler);
 
     cache_init();
-    sem_init(&flow_sem, 0, 32);
+    sem_init(&flow_sem, 0, 12);
 
     pvfs_connect(fs_spec);
 
