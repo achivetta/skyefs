@@ -181,6 +181,7 @@ void skye_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, off_t offset,
         return;
     } else if (db->buf && offset > 0 && (unsigned long)offset >= db->size) {
         fuse_reply_buf(req, NULL, 0);
+        free(db->buf);
         memset(db, 0, sizeof(struct direntbuf));
         return;
     }
