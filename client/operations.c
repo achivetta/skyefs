@@ -169,17 +169,22 @@ void skye_ll_opendir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
         (void)ctx;
         /* FIXME double instead of realloc each time */
         struct stat stbuf; memset(&stbuf, 0, sizeof(stbuf));
-        size_t newsize = db->size;
-        newsize += fuse_add_direntry(req, NULL, 0, dirent.d_name, NULL, 0);
-        char *newp = realloc(db->buf, db->size);
+        stbuf.st_ino = dirent.handle;
+
+        size_t entrysize = fuse_add_direntry(req, NULL, 0, dirent.d_name, NULL, 0);
+
+        char *newp = realloc(db->buf, db->size + entrysize);
         if (!newp) {
             return -1;
+        } else { 
+            db->buf = newp;
         }
-        db->buf = newp;
-        stbuf.st_ino = dirent.handle;
-        fuse_add_direntry(req, db->buf + db->size, newsize - db->size, dirent.d_name, &stbuf,
-                          newsize);
-        db->size = newsize;
+
+        fuse_add_direntry(req, db->buf + db->size, entrysize, dirent.d_name, &stbuf,
+                          db->size + entrysize);
+
+        db->size = db->size + entrysize;
+
         return 0;
     }
 
