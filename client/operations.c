@@ -155,14 +155,54 @@ struct direntbuf {
 
 void skye_ll_opendir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 {
-    (void)ino;
-    fi->fh = (uintptr_t)calloc(1,sizeof(struct direntbuf));
+    struct direntbuf *db = calloc(1,sizeof(struct direntbuf));
+    if (!db){
+        fuse_reply_err(req, EIO);
+        return;
+    }
+    fi->fh = (uintptr_t)db;
+
+    PVFS_credentials credentials; gen_credentials(&credentials, req);
+    PVFS_object_ref ref; ref.handle = inode2handle(&credentials, ino); ref.fs_id = pvfs_fsid;
+
+    int add_to_buf(void *ctx, PVFS_dirent dirent){
+        (void)ctx;
+        /* FIXME double instead of realloc each time */
+        struct stat stbuf; memset(&stbuf, 0, sizeof(stbuf));
+        size_t newsize = db->size;
+        newsize += fuse_add_direntry(req, NULL, 0, dirent.d_name, NULL, 0);
+        char *newp = realloc(db->buf, db->size);
+        if (!newp) {
+            return -1;
+        }
+        db->buf = newp;
+        stbuf.st_ino = dirent.handle;
+        fuse_add_direntry(req, db->buf + db->size, newsize - db->size, dirent.d_name, &stbuf,
+                          newsize);
+        db->size = newsize;
+        return 0;
+    }
+
+    int recurse(void *ctx, PVFS_dirent dirent){
+        /* TODO could we use this anywhere else? */
+        if (dirent.d_name[0] != 'p')
+            return 0; // Continue
+
+        int (*callback)(void *, PVFS_dirent) = ctx;
+        PVFS_object_ref ref; ref.fs_id = pvfs_fsid; ref.handle = dirent.handle;
+        return pvfs_readdir(NULL, &credentials, &ref, callback);
+    }
+
+    pvfs_readdir(add_to_buf, &credentials, &ref, recurse);
+
     fuse_reply_open(req, fi);
 }
+
 void skye_ll_releasedir (fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 {
     (void)req;
     (void)ino;
+
     if (fi->fh && ((struct direntbuf*)fi->fh)->buf)
         free(((struct direntbuf*)fi->fh)->buf);
     if (fi->fh)
@@ -173,52 +213,15 @@ void skye_ll_releasedir (fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *
 void skye_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, off_t offset,
                      struct fuse_file_info *fi)
 {
-    struct direntbuf *db = (struct direntbuf*)fi->fh;
+    (void)ino;
+    struct direntbuf *db = (void*)fi->fh;
 
-    if (db->buf && offset > 0 && (unsigned long)offset < db->size)
-    {
-        fuse_reply_buf(req, db->buf, min(db->size - offset, size));
-        return;
-    } else if (db->buf && offset > 0 && (unsigned long)offset >= db->size) {
+    if (offset >= (signed long)db->size){
         fuse_reply_buf(req, NULL, 0);
-        free(db->buf);
-        memset(db, 0, sizeof(struct direntbuf));
         return;
     }
 
-    PVFS_credentials credentials; gen_credentials(&credentials, req);
-    PVFS_object_ref ref; ref.handle = inode2handle(&credentials, ino); ref.fs_id = pvfs_fsid;
-
-    int add_to_buf(void *ctx, PVFS_dirent dirent){
-        (void)ctx;
-        /* FIXME double instead of realloc each time */
-        struct stat stbuf; memset(&stbuf, 0, sizeof(stbuf));
-        size_t oldsize = db->size;
-        db->size += fuse_add_direntry(req, NULL, 0, dirent.d_name, NULL, 0);
-        char *newp = realloc(db->buf, db->size);
-        if (!newp) {
-            return -1;
-        }
-        db->buf = newp;
-        stbuf.st_ino = dirent.handle;
-        fuse_add_direntry(req, db->buf + oldsize, db->size - oldsize, dirent.d_name, &stbuf,
-                          db->size);
-        return 0;
-    }
-
-    int recurse(void *ctx, PVFS_dirent dirent){
-        /* TODO could we use this anywhere else? */
-        if (dirent.d_name[0] != 'p')
-            return 0;
-
-        int (*callback)(void *, PVFS_dirent) = ctx;
-        PVFS_object_ref ref; ref.fs_id = pvfs_fsid; ref.handle = dirent.handle;
-        return pvfs_readdir(NULL, &credentials, &ref, callback);
-    }
-
-    pvfs_readdir(add_to_buf, &credentials, &ref, recurse);
-
-    fuse_reply_buf(req, db->buf, min(db->size, size));
+    fuse_reply_buf(req, db->buf + offset, min(db->size - offset, size));
 }
 
 /* function body taken from pvfs2fuse.c */
