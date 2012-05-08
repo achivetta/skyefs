@@ -7,22 +7,45 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <time.h>
+#include <pthread.h>
 
 volatile int curfile;
 volatile int lastfile;
+int errors;
 
-void alarmhandler(int signal){
-    (void)signal;
+void *thread_main(void *unused){
+    (void)unused;
+    int now, ret;
 
-    int now = curfile;
+    struct timespec ts;
+    ts.tv_sec = 1;
+    ts.tv_nsec = 0;
+
+    struct timespec rem;
+
+top:
+
+    now = curfile;
     printf("%d\n", now - lastfile);
     lastfile = now;
 
-    alarm(1);
+    ret = nanosleep(&ts, &rem);
+    if (ret == -1){
+        if (errno == EINTR)
+            nanosleep(&rem, NULL);
+        else
+            errors++;
+    }
+
+
+    if (errors > 50)
+        return NULL;
+    else
+        goto top;
 }
 
 int main(int argc, char **argv){
-    signal(SIGALRM, alarmhandler);
     setvbuf(stdout,NULL,_IONBF,0);
 
     if (argc != 3){
@@ -49,9 +72,19 @@ int main(int argc, char **argv){
 
     fprintf(stderr, "prefix: %s\n", filename);
 
-    //ualarm(1000000, 1000000);
-    alarm(1);
-    int errors = 0;
+    pthread_t tid;
+    int ret;
+    if ((ret = pthread_create(&tid, NULL, thread_main, NULL))){
+        fprintf(stderr, "pthread_create() error: %d\n",
+                ret);
+        exit(1);
+    }
+    if ((ret = pthread_detach(tid))){
+        fprintf(stderr, "pthread_detach() error: %d\n",
+                ret);
+        exit(1);
+    }
+
     for (curfile = 0; curfile < maxfiles; curfile++){
         sprintf(postfix, "%d", curfile);
 
@@ -62,6 +95,8 @@ int main(int argc, char **argv){
                 exit(2);
         }
     }
+
+    errors = 100;
 
     exit(0);
 }
