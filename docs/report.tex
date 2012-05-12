@@ -1,4 +1,4 @@
-\documentclass[letterpaper]{article}
+\documentclass[twocolumn,letterpaper]{article}
 
 \usepackage{graphicx}
 \usepackage{listings}
@@ -19,89 +19,147 @@ Gibson}
 
 \section{Overview}
 PVFS, the Parallel Virtual File System, stores all metadata for a particular
-directory on a single metadata server.  As a result, PVFS metadata performance
-on large or highly trafficked directories is poor. Giga+ is a scheme for
-distributing the metadata for a directory across a set of servers.  SkyeFS
-implements the Giga+ algorithms on top of an unmodified PVFS file system.
+directory on a single metadata server resulting in poor scalability in the case
+of large or high traffic directories.  Giga+ is a scheme for partitioning the
+metadata for a directory across a set of servers while still maintaining
+performance for small directories..  SkyeFS implements the Giga+ algorithms on
+top of an unmodified PVFS file system.
 
-SkyeFS consists of a client (\code{skye\_\-client}) which functions as the FUSE filesystem
-and a server (\code{skye\_\-server}) which provides synchronization for metadata
-operations and controls directory placement and splitting.  
+SkyeFS consists of a client (\code{skye\_\-client}) which functions as the
+FUSE filesystem and a server (\code{skye\_\-server}) which provides
+synchronization for metadata operations and controls directory placement and
+splitting.  
 
-Giga+ operates by splitting a directory into multiple partitions, which may or
-may not be on the same server, but act as distinct metadata stores.  Because in
-PVFS each directory stores all its metadata together on a single server, we
-represent each Giga+ partition as a distinct PVFS directory.  A SkyeFS server
-running on each PVFS metadata server (MDS) provides the synchronization and
-coordination for the partitions on the local PVFS MDS. 
-
-This paper presents the design and implementation decisions behind SkyeFS and
-their rational.  When appropriate, we also indicate places where future work is
-needed.  It is our hope that the design decisions made here may help inform
-future implementations of Giga+ or other systems on top of PVFS.
+Giga+ incrementally splits a directory into multiple partitions which are
+load-balanced across available servers.  In SkyeFS, we represent each
+partition as a distinct PVFS directory.  A SkyeFS server located with each
+PVFS metadata server (MDS) provides the synchronization and coordination for
+the partitions on the local PVFS MDS. 
 
 \section{Implementation Overview}
-We choose to implement Giga+ on top of PVFS instead of modifying PVFS itself in
-order to keep the implementation clean and simple.  FUSE provides an easy option
-for implementing the client side of the system due to the ease of writing a FUSE
-file system driver.  Additionally, the pvfs2\-fuse application distributed with
-the PVFS source provides an example of how to implement FUSE operations in PVFS.
+We choose to implement Giga+ as an overlay filesystem on top of PVFS, instead
+of modifying PVFS directly, in hopes of keeping the implementation small and
+simple.  FUSE provides an obvious choice for implementing the client side of
+the system due to the ease of writing a FUSE file system driver.
+Additionally, the pvfs2\-fuse application distributed with the PVFS source
+provides an example of how to implement FUSE operations in PVFS.  However,
+unlike pvs2\-fuse, we use the lowlevel FUSE API.  This allows us to directly
+specify the inode numbers returned to the kernel, avoiding extraneous pathname
+resolution in the client by using PVFS handles as inode numbers.
 
-In PVFS, each object, both directories and files, are assigned a PVFS metadata
-handle.  Each MDS is assigned a range of handles for which it is responsible.
-In the case of directories, the MDS responsible for a given directory's handle
-will contain all the directory entries for that directory.  Therefore, we can
-achieve partitioning of files between servers by ensuring that the directory
-entries fall in directories whose handles are owned by different MDSs.  
+In PVFS, every object is assigned a PVFS metadata handle and each PVFS server
+is statically assigned a range of handles for which it is responsible.  
+The directory entries in a directory are stored with that directory's metadata
+on the server responsible for its metadata handle.  We exploit this property
+of PVFS to manipulate metadata placement for each Giga+ partition.
 
 \subsection{Physical Layout}
-Through testing and reading of the PVFS source code, we determined that moving
-a file between directories, either on the same or different MDS, moves only
-the directory entry and not the entire file.  Therefore, we store each Giga+
-partition in a distinct PVFS directory instead of putting all Giga+ partitions
-in one directory per server.  We believe that the cost of having to sometimes
-split onto a local server is outweighed by the benefit of minimizing total
-directory size.
+SkyeFS establishes a direct mapping between Giga+ partitions and a set of PVFS
+directories.  This allows us to use Giga+ to both achieve load-balancing and
+keep overall directory size small.  Rename operations in PVFS are relatively
+cheep as they only move object metadata and not entire files.  This helps limit
+the cost of any extra renames required by this storage scheme.  In systems
+where this is not the case, a single directory per metadata server might be
+used instead.
 
-Upon creation of a logical directory, ``foo'', we create a PVFS directory of
-the same name.  Inside that PVFS directory, we create a PVFS directory for the
-first Giga+ partition called ``p00000''.  The `p' signifies that this is an
-active partition, while the ``00000'' provides the partition number.  When
-this partition splits, the directory ``p00001'' will be created adjacent to it
-to store the files in the new partition.  This gives rise to the invariant
-that every other directory in a PVFS path must be a partition of a logical
-directory.  For example, the path ``/p00005/foo/p00001/bar'' is a valid path,
-but ``/p00003/foo/bar'' is not.
+When a logical directory is created, we also create a PVFS directory on the
+same server called ``p00000'' inside the logical directory to represent the
+first Giga+ partition.  When this partition splits, a new directory ``p00001''
+will be created adjacent to it to store the files in the new partition.  
 
-The location for a new PVFS directory is determined by the PVFS client using
-round robin assignment, however there is no way to influence this
-decision.  To avoid requiring a modified PVFS client, we have implemented an
-initial naive solution to controlling the placement by simply removing and
-recreating a directory until it is placed by the PVFS client on the correct
-server.  Future improvements to the code could improve the efficiency of
-this code by caching the created directories, either in a per-directory or
-per-filesystem manor.  
+When a new PVFS directory is created, the client selects a metadata handle
+for the directory using round-robin assignment for the server.  Unfortunately,
+the PVFS client API does not currently provide any way to influence the
+server selection.  Until this feature is available, we work around the problem
+by repeatedly creating new directories until the resulting directory is on the
+correct server.  Future versions of SkyeFS might cache these directories to
+limit extraneous creates.
 
-In the per-directory case, when an unneeded directory is created it is renamed
-from ``p$n$'' to ``u$m$'' where $m$ is the first partition that does not yet
-exist but will be placed on that directory's MDS.  Prior to creating a
-directory for partition $n$, the system will check for the existence of
-``u$n$'' and rename it to ``p$n$'' if found.
+\subsection{Client/Server Architecture}
+\begin{figure}
+\begin{center}
+\includegraphics[scale=0.4]{figure-architecture}
+\end{center}
+\caption{SkyeFS Architecture Diagram}
+\end{figure}
 
-In the per-filesystem case a global scratch directory is maintained in which
-unused directories are placed.  Prior to creation of a new partition, this
-directory is searched for a directory on the correct server.  This has the
-advantage of leaving fewer unused directories on the file system but in systems
-with a high rate of splits could create a directory with a high rate of
-concurrent activity.
+\begin{figure}
+\begin{lstlisting}
+struct skye_directory {
+    giga_mapping mapping;
+    int reference_count;
+    PVFS_object_ref PVFS_handle;
+    int splitting_index;
+    pthread_rwlock_t rwlock;
+    UT_hash_handle hashtable_handle;
+};
+\end{lstlisting}
+\caption{Giga+ Directory Metadata}
+\label{fig:skyedir}
+\end{figure}
 
-\subsection{Path Translation}
+Giga+ has additional per-directory metadata that it must maintain in order to
+manage each directory's partitions.  SkyeFS uses a small server process,
+\code{skye\_server}, located on each PVFS server to manage this metadata and
+ensure consistency for the directories and partitions resident on that server.
+The \code{skye\_server} has a cache of \code{skye\_directory} structures for
+recently accessed directories.  This metadata in the \code{skye\_directory}
+structure can be regenerated from PVFS at any time.  This allows the
+\code{skye\_server} to fail or evict items from its cache at any time without
+the risk of leaving the system in an inconsistent state.
+
+Each client runs a \code{skye\_client} process that provides a FUSE filesystem
+and issues requests to the \code{skye\_server}s and PVFS directly through the
+PVFS system interface.  For most operations, the server is a simple adaption
+of the \code{pvfs2-fuse} code to use the lowlevel FUSE API.  However, metadata
+operations which require path name resolution or object creation are forwarded
+through the \code{skye\_server} to prevent race conditions.  To speed
+operation, the client also maintains a cache of the \code{giga\_mapping} for
+recently accessed directories.
+
+For performance and load-balance considerations, locality between the
+\code{skye\_\-server} process and the PVFS server to which it is making
+requests is maintained whenever possible.  Each RPC response includes an error
+code.  Upon receiving a RPC request, the server will determine if it owns the
+partition on which the request will operate.  If not, the server will return
+EAGAIN as the error code and provide the client with a copy of its own mapping
+for the directory.  Upon receiving this error code, the client will read the
+server provided mapping and merge that information with its local version.
+The client will then reattempt the RPC call to a new \code{skye\_\-server} as
+per the updated mapping.  This ensures both that locality as maintained and
+that the client's cached mapping will tend toward reality.
+
+The \code{skye\_\-server} process is also used to prevent a variety of race conditions.
+By forwarding all operations that operate on a file path or name, as opposed to
+only a PVFS handle, to the \code{skye\_\-server} we ensure that splitting does not
+interfere with successful execution of thees commands.  For example, during a
+create operation, the \code{skye\_\-server} thread issuing the create will lock a data
+structure for the directory so that the partition is prevented from splitting
+until the create can finish.  However, while simply forwarding all the work of
+potentially conflicting operations to a \code{skye\_\-server} would be an easy solution to
+concurrency problems, we attempt to offload the absolute minimum amount of work
+to the \code{skye\_\-server} to ensure that it does not become a bottleneck.
+
+\subsection{Path Resolution}
 \begin{figure}
 \begin{center}
 \includegraphics[scale=0.4]{figure-resolve}
 \end{center}
 \caption{SkyeFS Name Resolution}
 \end{figure}
+\code{lookup()} needs to be able to determine the partition in which an object
+should live before it can issue the appropriate \code{PVFS\_\-sys\_\-lookup()}
+call to determine an object's handle.  For this to be done quickly, and with a
+minimum of PVFS calls, we use a \code{skye\_\-server} process to maintain in
+RAM a bitmap representing the state of a directory.  The \code{skye\_\-server}
+process runs on each PVFS MDS and is responsible for coordinating access to
+the partitions living on that MDS.  It implements a handful for ONC RPC calls,
+including \code{lookup()}, that are used by the \code{skye\_\-client} to
+operate in or on the partitions handled by that server.  In the case of
+lookup(), the server consults its mapping and issues a PVFS lookup for a
+rewritten path including the partition of the object.
+
+FUSE uses a \code{lookup(inode, name)} callback to perform path resolution.  
 Given this layout, we must determine how clients are to translate logical path
 names to their respective PVFS objects.  The PVFS system interface uses PVFS
 handles to specify operands for most filesystem operations.  PVFS provides
@@ -126,52 +184,6 @@ logical directory is moved elsewhere in the directory tree.  As a result, we can
 safely hold a PVFS handle for the duration of a FUSE operation or between calls
 to \code{open()} and \code{close()} without having to check its validity.
 
-\subsection{Client/Server Architecture}
-\begin{figure}
-\begin{center}
-\includegraphics[scale=0.4]{figure-architecture}
-\end{center}
-\caption{SkyeFS Architecture Diagram}
-\end{figure}
-\code{lookup()} needs to be able to determine the partition in which an object
-should live before it can issue the appropriate \code{PVFS\_\-sys\_\-lookup()}
-call to determine an object's handle.  For this to be done quickly, and with a
-minimum of PVFS calls, we use a \code{skye\_\-server} process to maintain in
-RAM a bitmap representing the state of a directory.  The \code{skye\_\-server}
-process runs on each PVFS MDS and is responsible for coordinating access to
-the partitions living on that MDS.  It implements a handful for ONC RPC calls,
-including \code{lookup()}, that are used by the \code{skye\_\-client} to
-operate in or on the partitions handled by that server.  In the case of
-lookup(), the server consults its mapping and issues a PVFS lookup for a
-rewritten path including the partition of the object.
-
-The mapping between hash values and partitions/servers is determined by the
-values in a \code{struct giga\_\-mapping}.  Both the client and server
-maintain read-through caches for these structures.  In the event of a cache
-miss, the system will interrogate PVFS for appropriate initial data.
-
-For performance and load-balance considerations, locality between the
-\code{skye\_\-server} process and the PVFS server to which it is making
-requests is maintained whenever possible.  Each RPC response includes an error
-code.  Upon receiving a RPC request, the server will determine if it owns the
-partition on which the request will operate.  If not, the server will return
-EAGAIN as the error code and provide the client with a copy of its own mapping
-for the directory.  Upon receiving this error code, the client will read the
-server provided mapping and merge that information with its local version.
-The client will then reattempt the RPC call to a new \code{skye\_\-server} as
-per the updated mapping.  This ensures both that locality as maintained and
-that the client's cached mapping will tend toward reality.
-
-The \code{skye\_\-server} process is also used to prevent a variety of race conditions.
-By forwarding all operations that operate on a file path or name, as opposed to
-only a PVFS handle, to the \code{skye\_\-server} we ensure that splitting does not
-interfere with successful execution of thees commands.  For example, during a
-create operation, the \code{skye\_\-server} thread issuing the create will lock a data
-structure for the directory so that the partition is prevented from splitting
-until the create can finish.  However, while simply forwarding all the work of
-potentially conflicting operations to a \code{skye\_\-server} would be an easy solution to
-concurrency problems, we attempt to offload the absolute minimum amount of work
-to the \code{skye\_\-server} to ensure that it does not become a bottleneck.
 
 \subsection{Metadata Persistence}
 Closely related to the issue of physical layout is that of persisting SkyeFS
@@ -252,16 +264,6 @@ semantics.
 Each logical directory is represented by a \code{struct skye\_\-directory} on
 the server.  This structure is defined approximately as follows:
 
-\begin{lstlisting}
-struct skye_directory {
-    giga_mapping mapping;
-    int reference_count;
-    PVFS_object_ref PVFS_handle;
-    int splitting_index;
-    pthread_rwlock_t rwlock;
-    UT_hash_handle hashtable_handle;
-};
-\end{lstlisting}
 
 During normal operation, when no splits are happening,
 \code{splitting\_\-index} has the value of -1.  When an operation needs to
