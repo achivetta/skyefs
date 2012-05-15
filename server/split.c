@@ -162,19 +162,21 @@ static void do_split(PVFS_object_ref parent, index_t pindex){
         do {
             int i, issued = 0;
 
+            /* issue requests */
+            pthread_rwlock_wrlock(&dir->rwlock);
+
             memset(&rd_response, 0, sizeof(PVFS_sysresp_readdir));
             ret = PVFS_sys_readdir(phandle, (!token ? PVFS_READDIR_START : token),
                                    pvfs_dirent_incount, &creds, &rd_response,
                                    PVFS_HINT_NULL);
             if (ret < 0){
                 err_dump("couldn't list parent directory");
+                pthread_rwlock_unlock(&dir->rwlock);
                 goto exit; /* FIXME: handle error */
             }
 
             if (!rd_response.pvfs_dirent_outcount) goto next_batch;
 
-            /* issue requests */
-            pthread_rwlock_wrlock(&dir->rwlock);
 
             for (i = 0; (unsigned int)i < rd_response.pvfs_dirent_outcount; i++) {
                 char *name = rd_response.dirent_array[i].d_name;
