@@ -52,7 +52,7 @@ The directory entries in a directory are stored with that directory's metadata
 on the server responsible for its metadata handle.  We exploit this property
 of PVFS to manipulate metadata placement for each Giga+ partition.
 
-\subsection{Physical Layout}
+\subsection{Filesystem Layout}
 SkyeFS establishes a direct mapping between Giga+ partitions and a set of PVFS
 directories.  This allows us to use Giga+ to both achieve load-balancing and
 keep overall directory size small.  Rename operations in PVFS are relatively
@@ -171,60 +171,47 @@ directory is moved elsewhere in the directory tree.  As a result, we can
 safely return a PVFS handle to FUSE in the form of an inode umber.
 
 \subsection{Metadata Persistence}
-Closely related to the issue of physical layout is that of persisting SkyeFS
-metadata.  This includes the Giga+ mapping (the bitmap and zeroth server), the
-server list at the time of directory creation and the state of any splitting
-directories.  To make the system as fault tolerant as possible, we avoid
-explicitly storing any of this metadata and instead interrogate the state of a
-directory in PVFS to determine these values.
+All of the metadata required by Giga+ is persisted directly in PVFS.  Whenever
+possible, we prefer to rederive metadata from PVFs instead of storing new
+Giga+ data.  While this may come at a performance cost, it makes the system
+simple to implement and highly resilient to failures by preventing
+opportunities for inconsistencies.
 
-Rather than building into SkyeFS our own mechanism for maintenance of server
-lists we simply ask PVFS for the current server list on start up.  Tests indicate
-that PVFS will always return this in the same order.  In the event of a server
-addition the new servers are simply added to the end of the list.  As PVFS does
-not support the removal of servers, we do not need to provide support for that
-functionality.  Therefore, to determine the server list at the time of a
-directory creation we only need to know the number of servers that existed when
-the directory was created.
+The only filesystem-wide metadata is the server list.  Each SkyeFS client and
+server queries this information from PVFS directly.  This allows the system
+administrator to change server host names or add new servers by modifying only
+the PVFS configuration.
 
-When the server's read-through cache suffers a cache miss it must populate a new
-\code{struct skye\_\-directory} with the necessary information.  It determines
-the zeroth server by asking PVFS for the MDS responsible for the directory's
-PVFS handle.  It then performs a \code{readdir()} on the directory to find all
-existing partitions (folders with the `p' prefix).  This also will reveal any
-currently splitting partitions (folders with the `s' prefix).  If the server
-determines that it is responsible for completing an unfinished split it will
-enqueue the partition for completion by the split thread.\footnote{This is
-currently unimplemented.} It will then read an extended attribute from the
-directory that indicates the number of servers which existed when the
-directory was created.\footnote{This is currently unimplemented.}  This
-extended attribute is only ever written once, at the time the directory is
-created, so there is no risk of inconsistency being introduced by directory
-operations.  All the other values similarly do not face any inconsistency
-risks as they are simply functions of the physical layout of the directory.
+The most important piece of per-directory metadata is the Giga+ bitmap.  This
+consists of bits indicating the presence (or absence) of each possible
+partition, the server number of the zeroth server and  the number of servers
+at the time of creation.  To determine the partitions present, we issue a
+\code{readdir()} against the directory and parse the resulting directory names
+to determine the partition.  Future versions of SkyeFS will use a
+distinguishing name for currently splitting partitions to avoid prematurely
+adding these to the bitmap and to enable resuming splitting after a failure.
+The zeroth server is always the server responsible for the logical directory.
+To support server additions, the number of servers at creation can be stored
+as an extended attribute on the directory.
 
-On the client side we use a significantly simplified version of the cache
-population procedure to avoid hitting the PVFS servers.  When the read-through
-cache suffers a miss it will simply create a new object with a bitmap consisting
-of only the zeroth partition, a server list of length one and the zeroth server
-set to the owner of the directory's handle.  The merging semantics of Giga+
-mappings ensure that as the client receives updated mappings from the servers
-this initial mapping will tend toward accurate.
+\subsection{Client Bootstrap}
+To avoid creating additional load on PVFS, the \code{skye\_client} only loads
+a subset of the metadata from PVFS.  The first time a directory is accessed,
+it is assumed that there is only one partition.  The code can correctly set
+the identity of the zeroth server as this can be derived from PVFS handle for
+the directory without incurring additional PVFS operations.  If the client
+issues a RPC to the \code{skye\_server} for the directory which results in an
+EAGAIN error, it takes the bitwise OR of the current bitmap and the server
+provided bitmap.  This allows the client bitmap to be filled-in by the server
+on demand without incurring additional PVFS operations.
 
-Populating the initial mapping in this way causes the \code{lookup()} code to always
-start with the zeroth server in the cache-cold state.  While this ensures that
-some progress towards finding the correct server is always made, it has the
-potential to cause unbalanced load on servers which act as the zeroth server for
-popular directories.  One potential solution to this problem is to provide
-bootstrapping hints to clients during the iterative \code{lookup()} process.
-When a client performs a {lookup()} and the server detects that the object is
-a directory the server should also return any cached bitmap it may have for
-that directory to the client to populate its cache.  This would improve the
-performance of cache-cold and cache-warm lookups by reducing the number of
-servers a client must contact before it reaches the correct server. 
-
-This persistence scheme results in a system that can halt at almost any time
-without leaving the system in an inconsistent state.
+Populating the initial mapping in this way causes the \code{lookup()} code to
+always start with the zeroth server in the cache-cold state.  While this
+ensures that some progress towards finding the correct server is always made,
+it has the potential to cause unbalanced load on servers which act as the
+A future optimization might include having the \code{skye\_server} provide a
+bootstrap bitmap to clients when returning a \code{lookup()} result for a
+directory that is already cached on the server.
 
 \section{Filesystem Operations}
 \subsection{Splitting and file creation}
@@ -234,184 +221,147 @@ without leaving the system in an inconsistent state.
 \end{center}
 \caption{SkyeFS Create Procedure}
 \end{figure}
-The \code{create()} RPC is used by \code{skye\_\-client} to create files in a given
-directory.  Just like with \code{lookup()} only the server that owns the correct
-partition for a file will service a \code{create()} call.  Quite simply, the
-\code{create()} RPC calls \code{PVF\_\-sys\_\-create()} with the appropriate
-parent handle.  The complex part is handling splitting during and after a
-\code{create()}.
+The \code{skye\_client} provides a \code{create()} RPC for the
+\code{skye\_\-client} to create files in a given directory.  As with all
+\code{skye\_server} RPCs, only the server responsible for a partition will
+service create requests for that partition.  Each server manages splits for
+its partitions and coordinates operations that happen concurrently with a
+split.
 
-Splitting of partitions is a critical and potentially tricky part of the Giga+
-algorithm.  In PVFS we are able to achieve a high degree of concurrency in the
-face of splitting thanks to the stability of PVFS file handles and the rename
-semantics.
+Splits are triggered in Giga+ when the partition size exceeds a threshold.
+The current splitting status is maintained by the \code{splitting\_\-index}
+field of the \code{skye\_directory} structure.  When no split is happening,
+this field has the value -1; other times it has the number of the currently
+splitting partition.  Only one partition per directory may be splitting at one
+time under this scheme, however this is a desirable property for performance
+reasons.
 
-Each logical directory is represented by a \code{struct skye\_\-directory} on
-the server.  This structure is defined approximately as follows:
+The \code{skye\_directory} structure contains a read-write lock which is used
+to synchronize changes in the splitting state.  Operations that act on the
+directory, such as \code{lookup} and \code{create}, take a read lock for their
+duration.  When a partition is to be split, the write lock is taken, the
+\code{splitting\_index} updated, and then the write lock is dropped.
+Similarly, when splitting is complete, the write lock is taken while updating
+the \code{splitting\_index}.  This scheme ensures that each operation acting
+on a directory has a consistent view of the splitting state of a directory
+throughout the operation.  Without this synchronization, a complete bitmap
+comparison would be required to determine if a split had interfered with a
+concurrent operation making retry and recovery difficult.  The read-write lock
+is initialized with the
+\code{PTHREAD\_RWLOCK\_PREFER\_WRITER\_NONRECURSIVE\_NP} option to prevent
+starving writers.
 
+With a one percent probability, we evaluate the partition of a new object at
+the end of each \code{create} operation to see if the partition needs to be
+split.  This chick is implemented using the PVFS \code{getattr} operation
+which will return the number of directory entries in a directory.  If the
+directory size is greater than the split threshold, the partition is added to
+a queue of partitions to split and the \code{create} call returns.
 
-During normal operation, when no splits are happening,
-\code{splitting\_\-index} has the value of -1.  When an operation needs to
-access the directory, it acquires a read lock on the read-write lock for the
-duration of the operation.  By holding the read-write lock, the operation can
-be assured that no partition will begin to split until the lock is released.
+Each \code{skye\_\-server} has a dedicated thread for splitting partitions.
+This thread waits on a condition variable associated with the split queue.
+When a partition is added to the queue, the adding thread signals on the
+condition variable to wake up the splitter thread.  Upon waking, the splitter
+thread will iterate through the queue, confirming that the partitions are
+still over threshold and splitting them if needed.
 
-At the end of the \code{create()} call, a \code{stat()} operation is performed
-on the partition and the number of directory entries in the partition is
-compared to the system's split threshold.  If the current directory size is
-greater, the PVFS handle of the parent and the partition number are stored at
-the end of a queue of partitions to split.  The \code{create()} call then
-returns as normal.
+To split a partition, the splitter thread performs repeated \code{readdir}
+operations on the partition to determine the set of candidate entries.  For
+each entry, it hashes the name to determine if the object is to be moved to
+the new partition and, if so, moves the entry using the PVFS \code{rename}
+operation.  This process continues until a complete \code{readdir} of the
+directory finds no new entries to move.  In practice, this usually happens on
+the third pass.  When the split is complete, a \code{bucket\_\-add} RPC is
+sent to the server responsible for the new partition.  This RPC will cause the
+new server to add the partition to its bitmap and assume responsibility for
+the partition.
 
-Each \code{skye\_\-server} has a dedicated splitter thread.  This thread waits on a
-condition variable associated with the split queue.  When an operation adds a
-entry to the queue it signals on the condition variable to wake up the splitting
-thread.  The splitting thread iterates through the queue and splits all
-specified partitions which are found to still be over the splitting threshold.
+While a split is occurring, any thread that accesses the directory will notice
+that \code{splitting\_\-index} is not set to -1 allowing the operation to
+modify its behavior to operate correctly despite the split.  In the case of
+object creation, objects are created in the child partition if that is where
+they would be migrated.  In the case of \code{lookup}, both the child and
+parent partitions are checked for the object.
 
-To split a partition, the splitting thread first acquires a write lock in the
-directory.  This ensures that all operations currently outstanding on the
-directory are finished before the lock is acquired and that no new operations
-may begin.  The splitting thread then creates the destination partition using a
-`s' prefix instead of a `p' prefix in order to indicate, in the event of system
-failures, that a partition is still in the process of splitting.\footnote{This
-is currently unimplemented.}  It also sets the \code{splitting\_\-index} field
-to be the index of the splitting partition.  The splitting thread then unlocks
-the directory to allow operations to continue.
-
-The splitting thread performs a \code{readdir()} operation on the partition to be
-split.  For each entry, it hashes the name to determine if the object is to be
-moved to the new partition and then executes the move, using the PVFS
-\code{rename()} operation, if necessary.
-
-While this is happening, any thread that accesses the directory will notice that
-\code{splitting\_\-index} is not set to -1.  For creation operations, the
-correct post-split partition will automatically be used ensuring that the new
-object will end up in the correct partition.  For access operations such as
-lookup(), first the old directory will be checked and if the object is not
-found there the new directory will be checked.  The PVFS rename() operation
-ensures that a renamed file is always visible in at least one of the source or
-destination directories.  Therefore, this technique is guaranteed to always
-find the object if it exists.  The read-write lock is necessary for this technique to
-work because the operation must know for certain that the partition it
-accessed did not split during the operation.  If the operation simply checked
-the bitmap at the end of the operation it would be able to retry but this
-could lead to starvation, or at least many operations being forced to retry or
-correct inconsistent data.
-
-Upon completion of the split, the splitting thread reacquires a writer lock on
-the directory.  It renames the directory to begin with the prefix `p' instead of
-`s' and then sends a \code{bucket\_\-add()} RPC to the server responsible for the new
-partition.  Upon positive reply the server updates its copy of the bitmap, sets
-the \code{splitting\_\-index} back to -1 and unlocks the rwlock.  In the event that
-a positive reply is not provided by the destination server, the source server
-may still provide service to that partition by leaving the
-\code{splitting\_\-index} set and not updating the bitmap.\footnote{This is
-currently unimplemented.}  This will force operations to continue to check
-both directories.  The splitting thread now sleeps and retries the
-\code{bucket\_\-add()} RPC until it succeeds.  In this failure case, we
-intentionally avoid splitting new partitions to ensure that we don't create
-many new ``orphaned partitions''.
-
-We use a separate splitting thread for this operation to ensure that splittings
-are entirely asynchronous.  As a result, file system operations are able to
-happen even while a partition is being split.  This can result in significantly
-improved performance over implementations that must block during a split.  The
-separate split thread also ensures that operations threads can do the bare
-minimum amount of work during the create operation and leave splitting for
-later.  We use only one splitting thread because we don't want to split two
-partitions at a time due to the potential for resource contention with other
-operations at the PVFS server.  In addition, this allows us to simplify our data
-structures for each directory significantly because we only have to note one
-splitting partition at a time.
+We use a separate splitting thread to allow splittings to take place
+asynchronously with respect to the \code{create} operations that caused them.
+Our locking semantics allow filesystem operations to continue on a partition
+during its split.  These features can result in significantly improved
+performance over implementations that must block during a split.
 
 \subsection{Directory Creation}
-Our directory creation code extends \code{create()}'s locking and splitting
-functionality to handle a few directory creation issues.  Instead of using
-\code{PVFS\_\-sys\_\-create()} to create a file, the \code{PVFS\_\-sys\_\-mkdir()} call is
-used to create the logical directory.  The server on which that directory was
-created is determined by the handle of the new directory.  A new sub directory
-call``p00000'' is created on the same server as the zeroth partition of the
-directory.  This ensures that the zeroth server can be determined by looking
-at the logical directory's handle in addition to the zeroth partition's handle.
-The handle of the newly created logical directory is then returned to the client.
-
-When the client first attempts to access the new directory it will contact the
-zeroth partition's server for that directory as a result of the cache
-population process.  That server will also undergo the cache population
-process and find that it owns the zeroth partition of that directory.  From
-the perspective of the destination server, the creation of a new directory is
-indistinguishable from the first (cache cold) access of an existing, empty
-directory.
-
-Should the server doing directory creation fail between the creation of the
-logical directory and the first partition an inconsistent state will be
-left.\footnote{This is currently unimplemented}  In the event that such a
-directory is encountered, the server can simply delete the directory to return
-to a consistent state.  This check could also be implemented as part of a fsck
-process.
+In most respects, \code{mkdir} is implemented identically to \code{create}.
+When the \code{skye\_server} creates a directory it also creates that
+directory's first partition.  No additional work is done at creation time to
+setup Giga+ metadata as the server which creates the directory is usually not
+the zeroth server for the new directory.  The first time the new directory is
+accessed, the zeroth server will load the Giga+ metadata as if it was simply
+an old, but empty, directory.  In the event that a server fails between
+creating a directory and its zeroth partition, the directory will be in an
+inconsistent state.  However, this can be easily repaired by the server when
+such a directory is first accessed.
 
 \subsection{Object Removal}
-The remove operation for a file is a relatively simple operation.  We use the
-same logic as the \code{lookup()} operation for finding a file in a partition
-and then simply issue a \code{PVFS\_\-sys\_\-remove()} for that object.
+Removing a file is a relatively simple operation, we simply issue a PVFS
+remove for the file.  Currently, we do not remove empty partitions or
+coalesce partitions which shrink to below the split threshold.
 
-Directories are another story.  The remove operation on a directory must fail if
-there exists any files in the directory, otherwise the directory must be
-removed.  This means that we need to be able to remove the directory
-atomically from the perspective of the user and ensure that any concurrent
-\code{create()} operations either fail or cause the \code{remove()} to fail.
+However, \code{rmdir} presents a challenge because the directory removal must
+be coordinated between all servers which are responsible for a partition of
+the directory.  Additionally, we must ensure that the remove operation on a
+directory will fail if there exist any files in the directory.
 
 To coordinate removal of a directory, we implement a server to server RPC call
-called \code{bucket\_\-remove()}.  The client attempting to remove a directory will send a
-\code{remove()} RPC to the server holding the directory entry for the directory.  The
-server will then issue a \code{bucket\_\-remove()} RPC for each bucket in descending order
-(i.e. the highest numbered bucket first).  
+called \code{bucket\_\-remove}.  The client attempting to remove a directory
+will send a \code{remove} RPC to the server holding the directory entry for
+the directory.  The server will then issue a \code{bucket\_\-remove} RPC for
+each bucket in descending order (i.e. the highest numbered bucket first).  
 
 When a server receives this call it will attempt to remove the specified
-partition by issuing a \code{PVFS\_\-sys\_\-remove()} for the directory.  If the operation
+partition by issuing a PVFS \code{remove} for the partition.  If the operation
 succeeds then the partition will be removed from the owner's bitmap and the
 owner will return a positive response to the caller.  The caller will also
 remove the partition from its bitmap and then issue the next
-\code{bucket\_\-remove()}.
+\code{bucket\_\-remove}.
 
-If the \code{PVFS\_\-sys\_\-remove()} fails (for any reason other than \code{ENOENT}) the partition
-will remain in the bitmap and a negative response will be returned to the
-server.  The coordinating server will then halt the operation and return an
-error to the client.  In this case care must be taken to ensure that the system
-is left in a consistent state.  By removing the partitions in descending order
-we ensure that we always remove the parent of a split before its child.
-Therefore, each intermediate bitmap (produced between
-\code{bucket\_\-remove()} calls) is
-a valid bitmap in itself.
+If the PVFS \code{remove} fails (for any reason other than \code{ENOENT}) the
+partition will remain in the bitmap and a negative response will be returned
+to the server.  The coordinating server will then halt the operation and
+return the error to the client.  In this case care must be taken to ensure
+that the system is left in a consistent state.  By removing the partitions in
+descending order we ensure that we always remove the child of a split before
+its parent.  Therefore, each intermediate bitmap (produced between
+\code{bucket\_\-remove()} calls) is a valid bitmap in itself.
 
-We also need some mechanism to update client bitmaps to remove the now missing
-partitions.  The merge operation performed by the client does a logical
-OR of the old and new bitmaps making it unable to handle a removal.  Instead, we
-rely on a fail safe, ``something is wrong'' mechanism.  If a client receives an
-\code{EAGAIN} from a server but merging the bitmaps does not add any new partitions,
-the client will assume that something was removed and simply replace its bitmap
-with the server provided one.\footnote{This is currently unimplemented}
+However, for a client to behave correctly after an aborted \code{rmdir}
+operation, we need a mechanism to remove the deleted partitions from the
+client bitmap.  As the standard merge operation performed by the client does a
+logical OR of the old and new bitmaps it is unable to handle a removal.
+Instead, we rely on a fail safe, ``something is wrong'' mechanism.  If a
+client receives an \code{EAGAIN} from a server but merging the returned bitmap
+does not add any new partitions, the client will assume that something was
+removed and simply replace its bitmap with the server provided
+one bitmap.  This behavior is not currently implemented in SkyeFS, however
+when complete it will also allow for removal or coalescing of partitions as a
+directory shrinks.
 
 \subsection{Rename}
-The rename operation presents a challenge because it must operate on two distinct
-objects that may not be located on the same server.  To solve this we use an
-optimistic retry strategy.  First, the client uses \code{lookup()} to determine the
-handle of the destination directory.  The \code{skye\_\-server} implements a
-\code{partition()}
-RPC call that is similar to \code{lookup()} but instead of returning the handle of the
-requested object it returns the handle of the encompassing partition.  The
-client executing a \code{rename()} uses the \code{partition()} RPC to determine the handle of
-the source directory.  These two handles and the source and destination file
-names are passed to the destination partition's \code{skye\_\-server}.  The \code{skye\_\-server}
-will attempt to move the file using the provided source handle and name into the
-correct destination partition.  
+The \code{rename} operation is also challenging because it must operate on two
+distinct objects that may not be located on the same server.  To solve this we
+use an optimistic retry strategy.  The \code{skye\_\-server} implements a
+\code{partition} RPC that is similar to \code{lookup} but instead of returning
+the handle of the requested object it returns the handle of the encompassing
+partition.  The client uses \code{partition} to determine the handle of the
+source directory.  This handle (and the source and destination file names)
+are passed to the destination partition's \code{skye\_\-server}.  The
+\code{skye\_\-server} will attempt to move the file using the provided source
+handle and name into the correct destination partition.  
 
-In the event that a split has happened and the source partition has change, the
-rename will return an \code{ENOENT} which will then be passed back to the client.  In
-this case, the client will retry the rename with a new handle by making the
-partition() call again.  This retry process will continue until either the
-partition() call returns \code{ENOENT} or the rename succeeds.  
+In the event that a split has happened between the \code{partition} call and
+the \code{rename} call which caused the source partition to change, the
+\code{rename} will return \code{ENOENT}.  The client will the retry the
+\code{partition} to see if the partition's handle has changed.  If so, the
+rename is retried with the new handle.
 
 This technique eliminates the need for any locks to be held across multiple RPC
 calls but is vulnerable to starvation in the event of high rates of splitting.
@@ -425,18 +375,27 @@ the speed at which a split can progress.
 \end{center}
 \caption{SkyeFS readdir()}
 \end{figure}
-The \code{readdir()} operation requires some modification to handle the Giga+
-partitioning.  While PVFS provides directory versioning to allow clients to
-get a consistent snapshot of a directory we do not provide any such mechanism
-to our users.  Instead, our \code{readdir()} mechanism is a ``best effort'' attempt
-at providing a listing of the directory.  To accomplish this the client will
-perform a \code{PVFS\_sys\_readdir()} of the logical directory handle returned by
-\code{lookup()}.  The client will then perform a \code{PVFS\_sys\_readdir()} of all handles
-returned aggregating the results.  This naive approach will enter both real
-partitions and splitting partitions.  While this may result in some files
-being returned twice or not at all it is an inexpensive approach that will
-work well in static or small directories.  We anticipate that the directories
-for which this approach fails are too big for \code{readdir()} to be useful.
+To simplify the \code{readdir} and ensure correct semantics, the
+\code{skye\_client} implements the actual directory reading during the FUSE
+\code{opendir} callback.  The contents of a directory are loaded into an array
+from which each subsequent \code{readdir} command is serviced.
+
+Because each Giga+ partition is implemented as a distinct PVFS directory, it
+would be very difficult to implement a fully consistent readdir.  Instead, we
+make a best effort and avoid costly synchronization.  When the
+\code{skye\_client} receives an \code{opendir} call it first issues a PVFS
+\code{readdir} on the logical directory itself to get a list of partitions
+(both complete and splitting).  The client then iterates through each of these
+partitions and issues a PVFS \code{readir} for each partition concatenating
+the results.  
+
+While this technique is prove to returning inconsistant results in the case of
+concurrent modifications, it places a minimum load on the PVFS servers.
+However, it is important to note that this is only an issue for directories
+larger than the split threshold and most directories will fall well below this
+threshold.  In the future, \code{skye\_client} could aggressively fetch
+directory entries from multiple PVFS servers in parallel to complete the
+readdir more quickly.
 
 \subsection{Other Operations}
 \begin{figure}
@@ -446,16 +405,15 @@ for which this approach fails are too big for \code{readdir()} to be useful.
 \caption{SkyeFS IO Operations}
 \end{figure}
 All other operations are relatively straightforward modifications of their
-pvfs2\-fuse counterparts with the PVFS \code{lookup()} operation replaced by
-our own version.  This includes both data operations such as \code{read()} and
-\code{write()} as well as metadata operations like \code{stat()} and
-\code{chmod()}.  Because we resolve all objects to PVFS handles inside their
-Giga+ partitions, these operations can proceed on the client without concern
-for future splitting.
+pvfs2\-fuse counterparts with the PVFS \code{lookup} operation replaced by our
+RPC.  This includes both data operations such as \code{read} and \code{write}
+as well as metadata operations like \code{stat} and \code{chmod}.  Because we
+resolve all objects to PVFS handles inside their Giga+ partitions, these
+operations can proceed on the client without concern for future splitting.
 
 \section{Other Considerations}
 \subsection{Multi-step Lookup}
-In the current system, a \code{lookup()} call can only descend one step in a path
+In the current system, a \code{lookup} call can only descend one step in a path
 traversal.  Future work could extend the operation to provide the entire path
 to the \code{skye\_\-server} and allow the server to descend as many
 directories in the path as it owns.  This would be of limited value in the
@@ -632,6 +590,7 @@ operations in flight by initializing our flow control semaphore to 12.
 Our testing indicated that this value is optimal in the 32 server case.
 
 \subsection{Split Performance}
+\label{section:splitperf}
 During a split the split thread must issue \code{readdir} calls to the
 partition which is being split.  While this is happening, additional creates
 may be issued against that partition.  We found that without external
@@ -651,7 +610,7 @@ synchronization.  On our test system, this required 42 seconds and the
 directory listings took between 2 and 12 seconds to complete with a median of
 7 seconds.
 
-In our create synchronized model, each of the 10 threads that issue creates
+In our create-synchronized model, each of the 10 threads that issue creates
 synchronizes on a single mutex such that only one create is every in flight at
 a time.  With this model, 41 seconds were required to create the files and the
 listings took between 2 and 20 seconds to complete.
@@ -659,4 +618,11 @@ listings took between 2 and 20 seconds to complete.
 In our final, everything synchronized model, all create threads and the
 readdir thread synchronized on the same mutex.  With this model, the creates
 take 43 seconds to complete and all listings take less than 200ms.
+
+To overcome the PVFS stalls in the unsynchronized and create-synchronized
+models, our splitter thread initially drops the write lock after updating the
+\code{splitting\_index} but then reacquires the write lock for each set of
+\code{readdir + rename} operations.  This allows some degree of concurrency
+(outstanding operations can complete between each set of operations) while
+still preventing the observed stall.
 \end{document}
