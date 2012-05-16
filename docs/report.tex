@@ -1,23 +1,131 @@
-\documentclass[twocolumn,letterpaper]{article}
+\documentclass[onecolumn, 11pt, letterpaper]{article}
 
-\usepackage{graphicx}
 \usepackage{listings}
-\usepackage{url}
 \lstset{language=C}
 
-\newcommand{\code}[1]{\texttt{#1}}
+\usepackage{cmu-techreport}
+%\usepackage{comment}
+\newcommand{\graphtype}{monochrome}
 
-\title{SkyeFS: Distributed Directories using Giga+ and PVFS}
-\author{Anthony Chivetta \url{<anthony@chivetta.org>}\\Swapnil Patil \& Garth
-Gibson}
-\date{DRAFT --- \today}
+% PDF 
+\usepackage[%
+  draft=false,
+  colorlinks=true,     % color the words instead of use a colored box
+  urlcolor=blue,       % \href{...}{...} external (URL)
+  filecolor=blue,      % \href{...} local file
+  linkcolor=black,     % \ref{...} and \pageref{...}
+  citecolor=black,     % \cite{}
+%  pdftitle={},
+%  pdfauthor={},
+%  pdfsubject={},
+%  pdfkeywords={},
+%  pdfproducer={pdfLaTeX},
+%  pagebackref,        % backward references in the bibliography
+  pdfpagemode=UseOutlines,  % None, UseThumbs, UseOutlines, FullScreen
+  bookmarksopen=true   % Does outline start expanded?
+  ]{hyperref}
+
+\topmargin      -0.3in
+\headheight     0in
+\headsep        0.3in
+\textheight     9.0in
+\oddsidemargin  0pt
+\evensidemargin \oddsidemargin
+\marginparwidth 0.5in
+\textwidth      6.5in
+\renewcommand{\baselinestretch}{1.0}
+\renewcommand{\baselinestretch}{1.0}
+%\parindent 0.3in
+\parindent -0.6in
+
+% Math
+\usepackage[fleqn]{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage[mathscr]{eucal} % \mathcal and \mathscr for fancy calligraphy.
+ 
+% Fonts
+%\usepackage{mathptmx} % Times for body and for math symbols
+%\usepackage{helvet}   % Helvetica for \mathsf
+%\usepackage{courier}  % Courier for \mathtt
+
+
+% Everything else
+\usepackage[table]{xcolor}
+\usepackage{color}
+\usepackage{colortbl}
+\usepackage[pdftex,final]{graphicx}
+							 % actually include eps files when you build.
+\usepackage{url}
+\usepackage{hhline}        % fancy table lines
+\usepackage{tabularx}      % tables that auto-size
+% \usepackage[font={small},labelfont={bf},labelsep=period,margin=10pt,aboveskip=6pt,belowskip=-5pt]{caption}
+\usepackage[labelfont={bf},labelsep=period,margin=10pt]{caption}
+% Can do ``belowskip=-5pt'' to tighten up spacing further...
+% Or, can change \setlength\dbltextfloatsep{10pt plus 2pt} in usetex class file.
+%\usepackage{algorithmic}
+%\usepackage{verbatim}
+\usepackage[figuresright]{rotating}
+
+%%%%%% Tables and figures
+%%%%%%
+\usepackage[pdftex]{graphicx}           %%%%% PDFLATEX (for PDF figures)
+\usepackage{lscape}                     %%%%% Landscape rotation
+\usepackage{rotating}                   %%%%% ?
+\usepackage{booktabs}                   %%%%% ?
+\usepackage[table]{xcolor}              %%%%% Colors in tables
+
+%%%%%% Misc
+%%%%%%
+\usepackage{verbatim}                   %%%%% Block comments (\begin{comment}) 
+\usepackage{color}                      %%%%% Graphics
+\usepackage{thumbpdf}                   %%%%% ?
+\usepackage{url}                        %%%%% URL formatting
+
+\pagestyle{plain} % has page numbers
 
 \begin{document}
 
-\twocolumn[
-  \begin{@twocolumnfalse}
-    \maketitle
-    \begin{abstract}
+% Compact itemize and enumerate.  Note that they use the same counters and
+% symbols as the usual itemize and enumerate environments.
+\def\compactify{\itemsep=0pt \topsep=0pt \partopsep=0pt \parsep=0pt}
+\let\latexusecounter=\usecounter
+\newenvironment{CompactItemize}
+  {\def\usecounter{\compactify\latexusecounter}
+   \begin{itemize}}
+  {\end{itemize}\let\usecounter=\latexusecounter}
+\newenvironment{CompactEnumerate}
+  {\def\usecounter{\compactify\latexusecounter}
+   \begin{enumerate}}
+  {\end{enumerate}\let\usecounter=\latexusecounter}
+
+\newcommand{\bci}{\begin{CompactItemize}\addtolength{\itemsep}{-0.075in}}
+\newcommand{\eci}{\end{CompactItemize}}
+\newcommand{\bce}{\begin{CompactEnumerate}}
+\newcommand{\ece}{\end{CompactEnumerate}}
+
+\input{newcommands.tex}
+
+\newcommand{\sys}{\textsc{SkyeFS}}      %%%%%% SYSTEM NAME
+\newcommand{\AUTHORS}{\textsc{Anthony Chivetta, Swapnil Patil \& Garth Gibson}}
+\newcommand{\CONTACT}{\textit{Carnegie Mellon University}}
+\newcommand{\EMAIL}{\texttt{anthony @ chivetta.org, \{swapnil.patil , garth.gibson\} @ cs.cmu.edu}}
+\newcommand{\TITLE}{\textbf{SkyeFS:} \\ 
+\textbf{Distributed Directories using Giga+ and PVFS}%~\thanks{~\NOTICE}
+}
+
+\title{
+\textbf{SkyeFS:}\\
+\textbf{Distributed Directories using Giga+ and PVFS}
+}
+\author{\AUTHORS \\~\\ \EMAIL}
+
+\date{May 2012}
+\trnumber{CMU-PDL-12-XXX}
+
+\abstract{
+  \small
+  \it{
   There is growing set of large-scale data-intensive applications that require
   file system directories to store millions to billions of files in each
   directory and to sustain hundreds of thousands of concurrent directory
@@ -29,11 +137,12 @@ Gibson}
   of the PVFS cluster file system.  Our experimental evaluation demonstrates
   how an optimized interposition layer can help PVFS achieve the desired
   scalability for massive file system directories.
-    \end{abstract}
-    \vspace{1cm}
-  \end{@twocolumnfalse}
-]
+  }
+}
 
+\maketitle
+
+\parindent 0.3in
 
 \section{Overview}
 PVFS, the Parallel Virtual File System, stores all metadata for a particular
@@ -481,12 +590,10 @@ can then be resumed or aborted.
 
 \section{Correctness}
 To ensure correctness of the system, we tested against a modified version of
-Pawel Dawidek's fstest suite.\footnote{Available at
-\url{http://people.freebsd.org/~pjd/fstest/}}  Our version was limited to the
-tests for \code{chflags}, \code{chmod}, \code{chown}, \code{mkdir},
-\code{open}, \code{readdir}, \code{rename}, \code{rmdir} and \code{unlink}.
-We removed tests that required hard links, which our filesystem does not
-support.
+FreeBSD's fstest suite.\cite{fstest} Our version was limited to the tests for
+\code{chflags}, \code{chmod}, \code{chown}, \code{mkdir}, \code{open},
+\code{readdir}, \code{rename}, \code{rmdir} and \code{unlink}.  We removed
+tests that required hard links, which SkyeFS does not support.
 
 \section{Performance Analysis}
 
@@ -675,19 +782,30 @@ the desired responsiveness properties of PVFS in the case of small
 directories.  We note that future work is needed to overcome performance
 problems in PVFS exposed by the SkyeFS workloads.
 
+
+\newpage
+\small
+
 \section*{Acknowledgements}
 We'd like to thank Sam Lang and Phil Carns for their advice and assistance in
-working with PVFS.  We also thank the members and companies of the PDL
-Consortium (including APC, Cisco, EMC, Google, Hewlett-Packard, Hitachi, IBM,
-LSI, Microsoft Research, NetApp, Oracle, Seagate, Symantec, and VMWare) for
-their interest and support.
+working with PVFS.  This material is based upon research supported in part by
+the Notional Science Foundation under contract NFS CNS-1042543 (PRObE) and
+the Los Alamos National Lab under contract number DE-AC52-06NA25396 (IRHPIT).
+We also thank the members and companies of the PDL Consortium (including
+Actifio, American Power Conversion, EMC Corporation, Emulex, Facebook,
+Fusion-io, Google, Hewlett-Packard Labs, Hitachi, Huawei Technologies Co.,
+Intel Corporation, Microsoft Research, NEC Laboratories, NetApp, Inc., Oracle
+Corporation, Panasas, Riverbed, Samsung Information Systems America, Seagate
+Technology, STEC, Inc., Symantec Corporation, VMware, Inc., Western Digital)
+for their interest and support.
 
 \begin{thebibliography}{9}
 
   \bibitem{gigaplus}
-    Patil, S. and Gibson, G. GIGA+ : Scalable Directories for Shared File Systems.
-    Carnegie Mellon University Parallel Data Lab Technical Report CMU-PDL-08-110.
-    October 2008.
+    Patil, S. and Gibson, G. Scale and Concurrency of GIGA+: File System
+    Directories with Millions of Files.
+    Proceedings of FAST '11: 9th USENIX Conference on File and Storage
+    Technologies.
     \url{http://www.pdl.cmu.edu/PDL-FTP/PDSI/CMU-PDL-08-110_abs.shtml}
 
   \bibitem{pvfs}
@@ -708,6 +826,9 @@ their interest and support.
 
   \bibitem{fuse}
     FUSE. Filesystem in Userspace. \url{http://fuse.sf.net}
+
+  \bibitem{fstest}
+  Pawel Dawidek.  fstest from FreeBSD.  \url{http://people.freebsd.org/~pjd/fstest/}
 
 \end{thebibliography}
 \end{document}
