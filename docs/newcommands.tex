@@ -1,0 +1,175 @@
+%-- place any standard commands/environments here to get included in
+%-- documents.  When you include this file, you should do it before
+%-- the \begin{document} tag.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Special font and spacing formatting
+
+%-- Terms...  Use this to introduce a term in the paper.
+\newcommand{\term}[1]{\emph{#1}}
+
+%-- Provides fixed width font for code snippets.
+% \newcommand{\code}[1]{\texttt{\textbf{#1}}}
+% \newcommand{\code}[1]{\textsc{\texttt{#1}}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+%-- Commands: e.g., WRITE command.
+\newcommand{\command}[1]{{\textsc \MakeLowercase{#1}}}
+
+%-- Jiri caption
+\newcommand{\minicaption}[2]{\caption[#1]{\textbf{#1.} #2}}
+
+% Unit(s)
+%-- unit: 4KB -> 4\unit{KB}
+\newcommand{\unit}[1]{\,#1} % thin space followed by units
+%-- Units on numbers: 4KB -> \units{4}{KB}
+\newcommand{\units}[2]{#1\unit{#2}}
+% Specific units...
+\newcommand{\micros}{\ensuremath{\mu}{s}}
+
+%-- Inline title
+\newcommand{\inlinesection}[1]{\smallskip\noindent{\textbf{#1.}}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Editting commands
+
+%-- For notes about things that need to be fixed.
+\newcommand{\fix}[1]{~{\LARGE\ensuremath{\star}}~\textbf{#1}~{\LARGE\ensuremath{\star}}~}
+
+\newcommand{\bcut}{\marginpar{\ensuremath{\bigvee}}}
+\newcommand{\ecut}{\marginpar{\ensuremath{\bigwedge}}}
+
+%-- Draft watermark in upperleft corner
+\newcommand{\reviewtimetoday}[2]{\special{!userdict begin
+/bop-hook{gsave 20 710 translate 45 rotate 0.8 setgray
+/Times-Roman findfont 12 scalefont setfont 0 0   moveto (#1) show
+0 -12 moveto (#2) show grestore}def end}}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Table and Figure formatting
+
+% Table format
+% inter-row spacing for tables
+\renewcommand{\arraystretch}{1.0}
+% Control spacing of ``double lines'' (default is 2pt)
+% Can set this within braces but before \begin{table}...
+%\setlength{\doublerulesep}{0.2mm} % into a single think line
+% \setlength{\doublerulesep}{3pt} % obvious spacing.
+\setlength{\tabcolsep}{1pt} % default is 6pt
+
+% Table commands
+% font size for tables
+%\newcommand{\tablefontsize}{\scriptsize}
+%\newcommand{\tablefontsize}{\footnotesize}
+\newcommand{\tablefontsize}{\small}
+%\newcommand{\tablefontsize}{}
+
+% \usepackage{tabularx}
+% Using L, C, R as the column type will left, center, or right justify text.
+\newcolumntype{L}{X}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\newcolumntype{R}{>{\raggedleft\arraybackslash}X}
+
+% Figure commands
+\newcommand{\figurewidth}{\columnwidth}
+
+% algorithm / pseudo-code
+\newcommand{\pseudosize}{\scriptsize}
+\newcommand{\pseudowidth}{\columnwidth}
+\newcommand{\pseudoskip}{\smallskip}
+%\newcommand{\pseudoskip}{}
+
+% pseudo-code commands
+\newcommand{\ccomment}[1]{ /$*$ #1 $*$/}	
+\newcommand{\rccomment}[1]{\hfill\ccomment{#1}} % right aligns the comment
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Math. Uses package ``amsthm''.
+
+%-- Influenced by the ACM journal tex template
+%\newtheorem{theorem}{Theorem}[section]
+%\newtheorem{conjecture}[theorem]{Conjecture}
+%\newtheorem{corollary}[theorem]{Corollary}
+%\newtheorem{proposition}[theorem]{Proposition}
+%\newtheorem{lemma}[theorem]{Lemma}
+%\theoremstyle{definition} % This currently does nothing...
+%\newtheorem{definition}[theorem]{Definition}
+%\newtheorem{observation}[theorem]{Observation}
+%\newtheorem{remark}[theorem]{Remark}
+
+%%-- Referencing Lemma, Observation, Definition
+%\newcommand{\thmref}[1]{Theorem~\ref{#1}}
+%\newcommand{\lemref}[1]{Lemma~\ref{#1}}
+%\newcommand{\defref}[1]{Definition~\ref{#1}}
+
+%%-- Examine different math fonts 
+%%-- \usepackage{amsmath}
+%%-- \usepackage[mathscr]{eucal} % \mathcal and \mathscr for fancy calligraphy.
+%\newcommand{\mathfonts}[1]{ \text{math:~} {#1},\\ \text{mathsf:~} \mathsf{#1},\\ \text{mathcal:~} \mathcal{#1}\\ \text{mathscr:~} \mathscr{#1},\\ \text{mathrm:~} \mathrm{#1},\\ \text{mathbb:~} \mathbb{#1},\\ \text{mathbf:~} \mathbf{#1},\\ \text{mathtt:~} \mathtt{#1}}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Lists
+\newenvironment{outline}
+{
+	\renewcommand{\baselinestretch}{1.0}
+	\footnotesize
+    \begin{list}
+    {--} % Leave empty for nothing, or replace bullet with any other symbol.
+    {
+        \setlength{\partopsep}{0in}
+        \setlength{\topsep}{0in}
+        \setlength{\parsep}{0in}
+        \setlength{\itemsep}{0in}
+        \setlength{\leftmargin}{0.3in}
+    }
+}
+{
+    \end{list}
+}
+
+
+% Lists with single spacing
+\newenvironment{my_enumerate}{
+\begin{enumerate}
+  \setlength{\partopsep}{0in}
+  \setlength{\topsep}{0in}
+  \setlength{\itemsep}{1pt}
+  \setlength{\parskip}{0pt}
+  \setlength{\parsep}{0pt}
+}{\end{enumerate}}
+
+\newenvironment{my_description}{
+\begin{description}
+  \setlength{\partopsep}{0in}
+  \setlength{\topsep}{0in}
+  \setlength{\itemsep}{1pt}
+  \setlength{\parskip}{0pt}
+  \setlength{\parsep}{0pt}
+}{\end{description}}
+
+\newenvironment{my_itemize}{
+\begin{itemize}
+  \setlength{\partopsep}{0in}
+  \setlength{\topsep}{0in}
+  \setlength{\itemsep}{1pt}
+  \setlength{\parskip}{0pt}
+  \setlength{\parsep}{0pt}
+}{\end{itemize}}
+
+\newenvironment{my_list}{
+\begin{list}{}{
+%  \setlength{\itemindent}{\leftmargin}
+  \setlength{\topsep}{0in}
+  \setlength{\partopsep}{0in}
+  \setlength{\topsep}{0in}
+  \setlength{\itemsep}{1pt}
+  \setlength{\parskip}{0pt}
+  \setlength{\parsep}{0pt}
+}}{\end{list}}
+
+
+
+\hyphenation{OpenAFS}
+\hyphenation{FSVA}
