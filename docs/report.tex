@@ -14,20 +14,39 @@ Gibson}
 
 \begin{document}
 
-\maketitle
+\twocolumn[
+  \begin{@twocolumnfalse}
+    \maketitle
+    \begin{abstract}
+  There is growing set of large-scale data-intensive applications that require
+  file system directories to store millions to billions of files in each
+  directory and to sustain hundreds of thousands of concurrent directory
+  operations per second. Unfortunately most cluster file systems are unable to
+  provide this level of scale and parallelism.  In this research, we show how
+  the GIGA+ distributed directory algorithm, developed at CMU, can be applied
+  to a real-world cluster file system.  We designed and implemented a
+  user-level file system, called SkyeFS, that efficiently layers GIGA+ on top
+  of the PVFS cluster file system.  Our experimental evaluation demonstrates
+  how an optimized interposition layer can help PVFS achieve the desired
+  scalability for massive file system directories.
+    \end{abstract}
+    \vspace{1cm}
+  \end{@twocolumnfalse}
+]
+
 
 \section{Overview}
 PVFS, the Parallel Virtual File System, stores all metadata for a particular
-directory on a single metadata server resulting in poor scalability in the case
+directory on a single metadata server\cite{pvfs} resulting in poor scalability in the case
 of large or high traffic directories.  Giga+ is a scheme for partitioning the
 metadata for a directory across a set of servers while still maintaining
-performance for small directories..  SkyeFS implements the Giga+ algorithms on
+performance for small directories.\cite{gigaplus}  SkyeFS implements the Giga+ algorithms on
 top of an unmodified PVFS file system.
 
 SkyeFS consists of a client (\code{skye\_\-client}) which functions as the
 FUSE filesystem and a server (\code{skye\_\-server}) which provides
 synchronization for metadata operations and controls directory placement and
-splitting.  
+splitting.\cite{fuse}  
 
 Giga+ incrementally splits a directory into multiple partitions which are
 load-balanced across available servers.  In SkyeFS, we represent each
@@ -108,7 +127,7 @@ the risk of leaving the system in an inconsistent state.
 
 Each client runs a \code{skye\_client} process that provides a FUSE filesystem
 and issues requests to the \code{skye\_server}s using ONC RPC and PVFS using
-the PVFS system interface.  For most operations, the client is a simple
+the PVFS system interface.\cite{rpc}  For most operations, the client is a simple
 adaption of the \code{pvfs2-fuse} code to use the lowlevel FUSE API.  However,
 metadata operations which require path name resolution or object creation are
 forwarded through the \code{skye\_server} to prevent race conditions.  To
@@ -625,4 +644,70 @@ models, our splitter thread initially drops the write lock after updating the
 \code{readdir + rename} operations.  This allows some degree of concurrency
 (outstanding operations can complete between each set of operations) while
 still preventing the observed stall.
+\section{Related Work}
+SkyeFS implements the Giga+ technique for distributing filesystem metadata
+presented in \cite{gigaplus}.  As discussed in \cite{gigaplus}, Giga+ builds
+on a wide range of previous work on distributed file systems and data
+structures.  We adapt the code from the initial Giga+ prototype for use on a
+distributed file system (DFS) and show that the scalability results seen by
+the initial prototype can be seen when Giga+ is implemented in the context of
+a DFS.
+
+SkyeFS also builds on the FUSE module for the Linux kernel and the PVFS client
+library to provide filesystem services and consume PVFS services respectively.
+The \code{pvfs2-fuse} application distributed with PVFS provided valuable
+insight on how to bridge between the FUSE API and the PVFS API.  When
+possible, portions of code from this application were used verbatim.
+
+OrangeFS is a native implementation of Giga+ in PVFS.\cite{orange}  OrangeFS
+shows similar scaling performance to SkyeFS, however it lacks the ability to
+incrementally grow the number of partitions in a directory.
+
+\section{Conclusion}
+We successfully implemented Giga+ distributed directories on top of PVFS.  We
+demonstrated that the capabilities provided by PVFS are sufficient for a high
+performance implementation of distributed directories without requiring
+modification to PVFS itself.  This shim technique may be adaptable to
+implementation of distributed metadata on other distributed filesystems.
+We've shown that Giga+ is capable of achieving near linear speedup once a
+directory is at load balance.  We've also demonstrated that Giga+ preserves
+the desired responsiveness properties of PVFS in the case of small
+directories.  We note that future work is needed to overcome performance
+problems in PVFS exposed by the SkyeFS workloads.
+
+\section*{Acknowledgements}
+We'd like to thank Sam Lang and Phil Carns for their advice and assistance in
+working with PVFS.  We also thank the members and companies of the PDL
+Consortium (including APC, Cisco, EMC, Google, Hewlett-Packard, Hitachi, IBM,
+LSI, Microsoft Research, NetApp, Oracle, Seagate, Symantec, and VMWare) for
+their interest and support.
+
+\begin{thebibliography}{9}
+
+  \bibitem{gigaplus}
+    Patil, S. and Gibson, G. GIGA+ : Scalable Directories for Shared File Systems.
+    Carnegie Mellon University Parallel Data Lab Technical Report CMU-PDL-08-110.
+    October 2008.
+    \url{http://www.pdl.cmu.edu/PDL-FTP/PDSI/CMU-PDL-08-110_abs.shtml}
+
+  \bibitem{pvfs}
+    P. H. Carns, R. B. W. B. Ligon III, and R. Thakur. PVFS: A Parallel File
+    System For Linux Clusters. Proceedings of the 4th Annual Linux Showcase
+    and Conference, 2000.
+    \url{http://ftp.mcs.anl.gov/pub/tech_reports/reports/P804.pdf}
+
+  \bibitem{orange}
+    S. Yang, W. Ligon, and E. Quarles. Scalable Distributed Directory
+    Implementation on Orange File System. 7th IEEE International Workshop on
+    Storage Network Architecture and Parallel I/O, 2011.
+    \url{http://storageconference.org/2011/Papers/SNAPI/6.Yang.pdf}
+
+  \bibitem{rpc}
+    Srinivasan, R. RPC: Remote Procedure Call Protocol Specification Version 2.
+    RFC 1831, Aug. 1995.
+
+  \bibitem{fuse}
+    FUSE. Filesystem in Userspace. \url{http://fuse.sf.net}
+
+\end{thebibliography}
 \end{document}
