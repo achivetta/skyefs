@@ -237,7 +237,7 @@ the risk of leaving the system in an inconsistent state.
 Each client runs a \code{skye\_client} process that provides a FUSE filesystem
 and issues requests to the \code{skye\_server}s using ONC RPC and PVFS using
 the PVFS system interface.\cite{rpc}  For most operations, the client is a simple
-adaption of the \code{pvfs2-fuse} code to use the lowlevel FUSE API.  However,
+adaption of the \code{pvfs2fuse} code to use the lowlevel FUSE API.  However,
 metadata operations which require path name resolution or object creation are
 forwarded through the \code{skye\_server} to prevent race conditions.  To
 speed operation, the client also maintains a cache of the \code{giga\_mapping}
@@ -762,7 +762,7 @@ a DFS.
 
 SkyeFS also builds on the FUSE module for the Linux kernel and the PVFS client
 library to provide filesystem services and consume PVFS services respectively.
-The \code{pvfs2-fuse} application distributed with PVFS provided valuable
+The \code{pvfs2fuse} application distributed with PVFS provided valuable
 insight on how to bridge between the FUSE API and the PVFS API.  When
 possible, portions of code from this application were used verbatim.
 
