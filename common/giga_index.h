@@ -1,3 +1,13 @@
+/* 
+ * GIGA+ indexing implementation 
+ *  by- Swapnil V Patil (svp at cs)
+ *
+ * TERMINOLOGY:
+ *  - bitmap: indicates the presence/absence of a partition
+ *  - hash: hash of the filename
+ *  - index: position in the bitmap
+ *
+ */
 #ifndef GIGA_INDEX_H
 #define GIGA_INDEX_H   
 

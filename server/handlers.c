@@ -1,3 +1,9 @@
+/* This file is part of SkyeFS, an implementatino of Giga+ on PVFS.
+ *
+ * Copyright 2011-2012, Anthony Chivetta <anthony@chivetta.org>
+ *
+ * See COPYING for licence information.
+ */
 #include "common/defaults.h"
 #include "common/trace.h"
 #include "common/skye_rpc.h"

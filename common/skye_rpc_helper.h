@@ -1,3 +1,9 @@
+/* This file is part of SkyeFS, an implementatino of Giga+ on PVFS.
+ *
+ * Copyright 2011-2012, Anthony Chivetta <anthony@chivetta.org>
+ *
+ * See COPYING for licence information.
+ */
 #ifndef GIGA_RPC_HELPER_H
 #define GIGA_RPC_HELPER_H   
 

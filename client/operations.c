@@ -1,3 +1,9 @@
+/* This file is part of SkyeFS, an implementatino of Giga+ on PVFS.
+ *
+ * Portions of this file are takein from pvfs2fuse.
+ *
+ * See COPYING for licence information.
+ */
 #include "common/skye_rpc.h"
 #include "common/defaults.h"
 #include "common/connection.h"
