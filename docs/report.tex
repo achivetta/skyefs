@@ -129,7 +129,7 @@
   There is growing set of large-scale data-intensive applications that require
   file system directories to store millions to billions of files in each
   directory and to sustain hundreds of thousands of concurrent directory
-  operations per second. Unfortunately most cluster file systems are unable to
+  operations per second. Unfortunately, most cluster file systems are unable to
   provide this level of scale and parallelism.  In this research, we show how
   the GIGA+ distributed directory algorithm, developed at CMU, can be applied
   to a real-world cluster file system.  We designed and implemented a
@@ -147,47 +147,49 @@
 \section{Overview}
 PVFS, the Parallel Virtual File System, stores all metadata for a particular
 directory on a single metadata server\cite{pvfs} resulting in poor scalability in the case
-of large or high traffic directories.  Giga+ is a scheme for partitioning the
-metadata for a directory across a set of servers while still maintaining
-performance for small directories.\cite{gigaplus}  SkyeFS implements the Giga+ algorithms on
+of large or high traffic directories.  Giga+ is a scheme for partitioning
+directory metadata across a set of servers while still maintaining
+performance for small directories.\cite{gigaplus}  SkyeFS implements the Giga+ algorithm on
 top of an unmodified PVFS file system.
 
-SkyeFS consists of a client (\code{skye\_\-client}) which functions as the
+SkyeFS consists of a client (\code{skye\_\-client}) which functions as a
 FUSE filesystem and a server (\code{skye\_\-server}) which provides
-synchronization for metadata operations and controls directory placement and
-splitting.\cite{fuse}  
+synchronization for metadata operations, controls directory placement and
+coordinates splitting.\cite{fuse}  
 
-Giga+ incrementally splits a directory into multiple partitions which are
+As a directory grows, Giga+ incrementally splits the directory into multiple partitions which are
 load-balanced across available servers.  In SkyeFS, we represent each
-partition as a distinct PVFS directory.  A SkyeFS server located with each
-PVFS metadata server (MDS) provides the synchronization and coordination for
-the partitions on the local PVFS MDS. 
+partition as a distinct PVFS directory.  A SkyeFS server located on the same
+host as each
+PVFS metadata server (MDS) provides synchronization and coordination.
+
 
 \section{Implementation Overview}
-We choose to implement Giga+ as an overlay filesystem on top of PVFS, instead
-of modifying PVFS directly, in hopes of keeping the implementation small and
-simple.  FUSE provides an obvious choice for implementing the client side of
-the system due to the ease of writing a FUSE file system driver.
+We chose to implement Giga+ as an overlay filesystem on top of PVFS, instead
+of modifying PVFS directly to keep the implementation small and
+simple.  
+FUSE makes developing a VFS-compatable filesystem easy by removing the need to
+write a kernel-mode filesystem drier.
 Additionally, the pvfs2\-fuse application distributed with the PVFS source
-provides an example of how to implement FUSE operations in PVFS.  However,
+provides an example of how to implement FUSE operations using PVFS.  However,
 unlike pvs2\-fuse, we use the lowlevel FUSE API.  This allows us to directly
-specify the inode numbers returned to the kernel, avoiding extraneous pathname
-resolution in the client by using PVFS handles as inode numbers.
+specify PVFS handles as the inode numbers returned to the kernel, avoiding extraneous pathname
+resolution in the client.
 
 In PVFS, every object is assigned a PVFS metadata handle and each PVFS server
 is statically assigned a range of handles for which it is responsible.  
-The directory entries in a directory are stored with that directory's metadata
+Directory entries are stored with the directory's metadata
 on the server responsible for its metadata handle.  We exploit this property
-of PVFS to manipulate metadata placement for each Giga+ partition.
+of PVFS to control metadata placement for each Giga+ partition.
 
 \subsection{Filesystem Layout}
 SkyeFS establishes a direct mapping between Giga+ partitions and a set of PVFS
-directories.  This allows us to use Giga+ to both achieve load-balancing and
-keep overall directory size small.  Rename operations in PVFS are relatively
-cheep as they only move object metadata and not entire files.  This helps limit
-the cost of any extra renames required by this storage scheme.  In systems
-where this is not the case, a single directory per metadata server might be
-used instead.
+directories.  This allows us to use Giga+ for bothload-balancing and
+to keep directory size small.  Rename operations in PVFS are relatively
+cheep as they only move object metadata and not entire files.  This limits the
+cost of the extra renames required by this storage scheme.  In systems without
+efficient rename, a single directory per metadata server might be used
+instead.
 
 When a logical directory is created, we also create a PVFS directory on the
 same server called ``p00000'' inside the logical directory to represent the
@@ -196,10 +198,10 @@ will be created adjacent to it to store the files in the new partition.
 
 The PVFS client uses round-robin assignment for selecting the metadata server
 on which it will create a new  object.  Unfortunately, the PVFS client API
-does not currently provide any way to influence this server selection.  When
-creating PVFS directories for new partitions, we work around the problem by
-repeatedly creating new directories until the resulting directory is on the
-correct server.  Future versions of SkyeFS might cache these directories to
+does not currently provide any way to influence this server selection.
+Therefore, when creating PVFS directories for new partitions, we must 
+repeatedly create new directories until the resulting directory is on the
+desired server.  Future versions of SkyeFS might cache these directories to
 limit extraneous creates.
 
 \subsection{Client/Server Architecture}
@@ -240,30 +242,31 @@ the PVFS system interface.\cite{rpc}  For most operations, the client is a simpl
 adaption of the \code{pvfs2fuse} code to use the lowlevel FUSE API.  However,
 metadata operations which require path name resolution or object creation are
 forwarded through the \code{skye\_server} to prevent race conditions.  To
-speed operation, the client also maintains a cache of the \code{giga\_mapping}
+speed operation, the client also maintains a cache of \code{giga\_mapping}s
 for recently accessed directories.
 
 For performance and load-balance reasons, locality between the
-\code{skye\_\-server} process and the PVFS server to which it is making
-requests is maintained whenever possible.  Upon receiving a RPC request, the
-server will first check if it owns the partition to be accessed by the
-request.  If not, the server will return the error EAGAIN and provide
-the client with a copy of its own mapping for the directory.  Upon receiving
-this error, the client will read the server provided mapping and merge that
+\code{skye\_\-server} process and the PVFS server to which 
+requests are being issued is maintained whenever possible.  Upon receiving a RPC request, the
+server will first check if the partition to be accessed by the
+request is local.  If not, the server will return the error EAGAIN and provide
+the client with a copy of its own \code{giga\_mapping} for the directory.  Upon receiving
+this error, the client will read the provided mapping and merge that
 information with its local version.  The client will then reattempt the RPC
-call to the new \code{skye\_\-server} as per the updated mapping.  This
-ensures both that locality is maintained and that the client's cached mapping
-will tend toward reality.
+to the new \code{skye\_\-server}, as per the updated mapping.  This
+ensures that locality is maintained and that the client's cached mapping
+will be updated to reflect new partitions.
 
 The most important job of the \code{skye\_server} is to prevent race
 conditions during splitting.  Any operation that must resolve a pathname (such
 as a lookup, create, or rename) needs to have an accurate Giga+ bitmap for the
 directory so that they can operate on the correct partition.  By forwarding
-these operations to the \code{skye\_server}, the server can ensure they happen
-without interference from changing bitmaps.  There do exist schemes that would
-allow client applications do so some of these operations without the server in
-an optimistic manor; however, such schemes are error prone and overly
-complicated.
+these operations to the \code{skye\_server}, the server can ensure that these
+operations proceed 
+without interference from changing bitmaps.  There do exist optimistic schemes that would
+allow client applications to perform some of these operations without server
+involvement, however we believe that they would incur unacceptable performance
+overhead and require significantly more complex operations.
 
 \subsection{Path Resolution}
 \begin{figure}
@@ -273,23 +276,17 @@ complicated.
 \caption{SkyeFS Name Resolution}
 \end{figure}
 The FUSE lowlevel API uses a \code{lookup(inode, name)} callback to perform
-path resolution.  We use the PVFS handle for an object as the FUSE inode to
+path resolution.  We use an object's PVFS handle as the FUSE inode to
 avoid keeping a lookup table on the client.  PVFS provides a
 \code{PVFS\_\-sys\_\-ref\_\-lookup(handle, name)} which is analogous to the
 FUSE \code{lookup} function.  Our \code{skye\_server} wraps this PVFS function
-to both resolve the Giga+ partition and the object itself and exposes an
+to both resolve the Giga+ partition and the object itself and exposes a
 \code{lookup} RPC to accomplish this.  When the \code{skye\_client} receives a
-\code{lookup} callback, it consults its cached bitmap (if any) and then
+\code{lookup} callback from FUSE, it consults its cached bitmap (if any) and then
 makes an RPC call to the responsible \code{skye\_server}, retrying in the
 event that an EAGAIN is returned.  By resolving both the partition and
 requested object in the server, we avoid race conditions due to concurrent
-splits.  \footnote{For example, issuing the RPC \code{lookup(NULL, ``foo'')}
-would return the PVFS handle of ``/p00004/foo'' if ``foo'' was stored in the
-fifth partition of the filesystem root.  If we let that handle be $h$, then
-\code{lookup($h$, ``bar'')} would return the PVFS handle of
-``/p00004/foo/p00002/bar'' if ``bar'' is in the third partition of ``foo''.
-In this manor, any logical path can be resolved to its PVFS handle in a manor
-opaque to the caller.}
+splits.  
 
 As PVFS metadata handles do not change when their objects are moved between
 directories, the handle returned by \code{lookup} is guaranteed to continue to
@@ -301,9 +298,9 @@ safely return a PVFS handle to FUSE in the form of an inode umber.
 \subsection{Metadata Persistence}
 All of the metadata required by Giga+ is persisted directly in PVFS.  Whenever
 possible, we prefer to rederive metadata from PVFs instead of storing new
-Giga+ data.  While this may come at a performance cost, it makes the system
-simple to implement and highly resilient to failures by preventing
-opportunities for inconsistencies.
+Giga+ metadata.  While this may come at a performance cost, preventing
+opportunities for inconsistencies makes the system
+simple to implement and highly resilient to failures.
 
 The only filesystem-wide metadata is the server list.  Each SkyeFS client and
 server queries this information from PVFS directly.  This allows the system
@@ -313,10 +310,11 @@ the PVFS configuration.
 The most important piece of per-directory metadata is the Giga+ bitmap.  This
 consists of bits indicating the presence (or absence) of each possible
 partition, the server number of the zeroth server and  the number of servers
-at the time of creation.  To determine the partitions present, we issue a
+at the time of creation.  To determine the partitions present in a logical
+directory, we issue a
 \code{readdir()} against the directory and parse the resulting directory names
 to determine the partition.  Future versions of SkyeFS will use a
-distinguishing name for currently splitting partitions to avoid prematurely
+different prefix for currently splitting partitions to avoid prematurely
 adding these to the bitmap and to enable resuming splitting after a failure.
 The zeroth server is always the server responsible for the logical directory.
 To support server additions, the number of servers at creation can be stored
@@ -325,21 +323,20 @@ as an extended attribute on the directory.
 \subsection{Client Bootstrap}
 To avoid creating additional load on PVFS, the \code{skye\_client} only loads
 a subset of the metadata from PVFS.  The first time a directory is accessed,
-it is assumed that there is only one partition.  The code can correctly set
-the identity of the zeroth server as this can be derived from PVFS handle for
-the directory without incurring additional PVFS operations.  If the client
+it is assumed that there is only one partition.  The client can determine
+the identity of the zeroth server without incurring any PVFS operations.  If the client
 issues a RPC to the \code{skye\_server} for the directory which results in an
 EAGAIN error, it takes the bitwise OR of the current bitmap and the server
-provided bitmap.  This allows the client bitmap to be filled-in by the server
-on demand without incurring additional PVFS operations.
+provided bitmap, allowing the client bitmap to be filled-in by the server
+without additional PVFS operations.
 
 Populating the initial mapping in this way causes the \code{lookup()} code to
-always start with the zeroth server in the cache-cold state.  While this
+always start at the zeroth server in the cache-cold state.  While this
 ensures that some progress towards finding the correct server is always made,
-it has the potential to cause unbalanced load on servers which act as the
-A future optimization might include having the \code{skye\_server} provide a
-bootstrap bitmap to clients when returning a \code{lookup()} result for a
-directory that is already cached on the server.
+it has the potential to cause unbalanced load on servers which host the zeroth
+partition for a popular directory.  A future optimization might include having
+the \code{skye\_server} provide a bootstrap bitmap to clients when returning a
+\code{lookup()} result for a directory that is already cached on the server.
 
 \section{Filesystem Operations}
 \subsection{Splitting and file creation}
@@ -349,7 +346,7 @@ directory that is already cached on the server.
 \end{center}
 \caption{SkyeFS Create Procedure}
 \end{figure}
-The \code{skye\_client} provides a \code{create()} RPC for the
+The \code{skye\_server} provides a \code{create()} RPC for the
 \code{skye\_\-client} to create files in a given directory.  As with all
 \code{skye\_server} RPCs, only the server responsible for a partition will
 service create requests for that partition.  Each server manages splits for
@@ -360,7 +357,7 @@ Splits are triggered in Giga+ when the partition size exceeds a threshold.
 The current splitting status is maintained by the \code{splitting\_\-index}
 field of the \code{skye\_directory} structure.  When no split is happening,
 this field has the value -1; other times it has the number of the currently
-splitting partition.  Only one partition per directory may be splitting at one
+splitting partition.  Only one partition per directory may split at a
 time under this scheme, however this is a desirable property for performance
 reasons.
 
@@ -371,17 +368,17 @@ duration.  When a partition is to be split, the write lock is taken, the
 \code{splitting\_index} updated, and then the write lock is dropped.
 Similarly, when splitting is complete, the write lock is taken while updating
 the \code{splitting\_index}.  This scheme ensures that each operation acting
-on a directory has a consistent view of the splitting state of a directory
+on a directory has a consistent view of the splitting state 
 throughout the operation.  Without this synchronization, a complete bitmap
 comparison would be required to determine if a split had interfered with a
-concurrent operation making retry and recovery difficult.  The read-write lock
+concurrent operation making retry and recovery complex.  The read-write lock
 is initialized with the
 \code{PTHREAD\_RWLOCK\_PREFER\_WRITER\_NONRECURSIVE\_NP} option to prevent
 starving writers.
 
 With a one percent probability, we evaluate the partition of a new object at
 the end of each \code{create} operation to see if the partition needs to be
-split.  This chick is implemented using the PVFS \code{getattr} operation
+split.  This check is implemented using the PVFS \code{getattr} operation
 which will return the number of directory entries in a directory.  If the
 directory size is greater than the split threshold, the partition is added to
 a queue of partitions to split and the \code{create} call returns.
@@ -398,10 +395,10 @@ operations on the partition to determine the set of candidate entries.  For
 each entry, it hashes the name to determine if the object is to be moved to
 the new partition and, if so, moves the entry using the PVFS \code{rename}
 operation.  This process continues until a complete \code{readdir} of the
-directory finds no new entries to move.  In practice, this usually happens on
-the third pass.  When the split is complete, a \code{bucket\_\-add} RPC is
+directory finds no new entries to move.  In practice, this usually requires
+three passes.  When the split is complete, a \code{bucket\_\-add} RPC is
 sent to the server responsible for the new partition.  This RPC will cause the
-new server to add the partition to its bitmap and assume responsibility for
+new server to add the partition to its bitmap and, therefore, assume responsibility for
 the partition.
 
 While a split is occurring, any thread that accesses the directory will notice
@@ -411,11 +408,11 @@ object creation, objects are created in the child partition if that is where
 they would be migrated.  In the case of \code{lookup}, both the child and
 parent partitions are checked for the object.
 
-We use a separate splitting thread to allow splittings to take place
-asynchronously with respect to the \code{create} operations that caused them.
+We use a separate splitting thread to allow splitting to take place
+asynchronously with respect to the triggering \code{create} operation.
 Our locking semantics allow filesystem operations to continue on a partition
 during its split.  These features can result in significantly improved
-performance over implementations that must block during a split.
+performance over implementations that must block all operations during a split.
 
 \subsection{Directory Creation}
 In most respects, \code{mkdir} is implemented identically to \code{create}.
@@ -465,13 +462,12 @@ However, for a client to behave correctly after an aborted \code{rmdir}
 operation, we need a mechanism to remove the deleted partitions from the
 client bitmap.  As the standard merge operation performed by the client does a
 logical OR of the old and new bitmaps it is unable to handle a removal.
-Instead, we rely on a fail safe, ``something is wrong'' mechanism.  If a
+Instead, we rely on a fail safe mechanism.  If a
 client receives an \code{EAGAIN} from a server but merging the returned bitmap
-does not add any new partitions, the client will assume that something was
-removed and simply replace its bitmap with the server provided
-one bitmap.  This behavior is not currently implemented in SkyeFS, however
-when complete it will also allow for removal or coalescing of partitions as a
-directory shrinks.
+does not add any new partitions, the client will assume that a partition was
+removed and replace its bitmap with the server provided
+bitmap.  This behavior is not currently implemented in SkyeFS, but may also
+allow for removal or coalescing of partitions as a directory shrinks.
 
 \subsection{Rename}
 The \code{rename} operation is also challenging because it must operate on two
@@ -480,21 +476,20 @@ use an optimistic retry strategy.  The \code{skye\_\-server} implements a
 \code{partition} RPC that is similar to \code{lookup} but instead of returning
 the handle of the requested object it returns the handle of the encompassing
 partition.  The client uses \code{partition} to determine the handle of the
-source directory.  This handle (and the source and destination file names)
+source's parent partition.  This handle (and the source and destination file names)
 are passed to the destination partition's \code{skye\_\-server}.  The
 \code{skye\_\-server} will attempt to move the file using the provided source
 handle and name into the correct destination partition.  
 
 In the event that a split has happened between the \code{partition} call and
-the \code{rename} call which caused the source partition to change, the
-\code{rename} will return \code{ENOENT}.  The client will the retry the
-\code{partition} to see if the partition's handle has changed.  If so, the
+the \code{rename} call, causing the source partition to change, the
+\code{rename} will return \code{ENOENT}.  The client will then retry the
+\code{partition} RPC to see if the partition's handle has changed.  If so, the
 rename is retried with the new handle.
 
 This technique eliminates the need for any locks to be held across multiple RPC
 calls but is vulnerable to starvation in the event of high rates of splitting.
-We believe this this risk of starvation is unlikely to occur in practice due to
-the speed at which a split can progress.
+We believe starvation is unlikely to occur in practice.
 
 \subsection{Directory Listing}
 \begin{figure}
@@ -503,21 +498,21 @@ the speed at which a split can progress.
 \end{center}
 \caption{SkyeFS readdir()}
 \end{figure}
-To simplify the \code{readdir} and ensure correct semantics, the
+To simplify \code{readdir} and ensure correct semantics, the
 \code{skye\_client} implements the actual directory reading during the FUSE
-\code{opendir} callback.  The contents of a directory are loaded into an array
-from which each subsequent \code{readdir} command is serviced.
+\code{opendir} callback at which point the contents of the directory are loaded
+into an array from which each subsequent \code{readdir} command is serviced.
 
 Because each Giga+ partition is implemented as a distinct PVFS directory, it
 would be very difficult to implement a fully consistent readdir.  Instead, we
-make a best effort and avoid costly synchronization.  When the
+make a best effort and avoid synchronization.  When the
 \code{skye\_client} receives an \code{opendir} call it first issues a PVFS
 \code{readdir} on the logical directory itself to get a list of partitions
 (both complete and splitting).  The client then iterates through each of these
-partitions and issues a PVFS \code{readir} for each partition concatenating
+partitions and issues a PVFS \code{readir} for each partition, concatenating
 the results.  
 
-While this technique is prove to returning inconsistant results in the case of
+While this technique is prone to returning inconsistent results in the case of
 concurrent modifications, it places a minimum load on the PVFS servers.
 However, it is important to note that this is only an issue for directories
 larger than the split threshold and most directories will fall well below this
@@ -551,8 +546,8 @@ could be placed often on the same server to allow this mechanism to speed
 directory lookups.  One example scheme to achieve this would be to place all
 new directories on the same server as their parent.  When a directory splits
 the first time the zeroth server would be moved to a new server chosen at
-random.  This would have the effect of keeping strings of small (and likely
-low-traffic) directories on the same server while still ensuring that large
+random.  This would have the effect of keeping strings of small 
+directories on the same server while still ensuring that large
 directories are load-balanced.
 
 \subsection{Server Addition}
@@ -564,20 +559,18 @@ The current SkyeFS implementation includes no specific provisions for addition
 of servers, however future work could use SkyeFS to support the migration of
 some data to new PVFS MDS.  In particular, by splitting overfull but already
 load-balanced directories to these new servers some load can be moved to the
-servers in already existing directories.  Because SkyeFS stores the number of
+servers in already existing directories.  Because SkyeFS will store the number of
 servers existing at the time of creation in each directory as an extended
-attribute of that directory,\footnote{This is currently unimplemented.} no
+attribute of that directory, no
 specific mechanism is needed to add a new server other than adding the server
-to the PVFS cluster and restarting all \code{skye\_\-server} processes.  However,
-this mechanism is untested.
+to the PVFS cluster and restarting all \code{skye\_\-server} processes.
 
 \subsection{Fault Tolerance}
-PVFS is not a redundant file system and so it has very limited support for fault
-tolerant or highly available configurations.  As a result, we do not make any
+PVFS is not a redundant file system and has very limited support for fault
+tolerant operation.  As a result, we do not make any
 attempts to provide redundant services or fall over support in the case of
 failures.  We assume that \code{skye\_\-server} processes and the PVFS servers fail
-together and that any failure will render the system unusable until resolved by
-restarting the system.
+together and that any failure will render the system unusable until resolved.
 
 However, we do make every effort to leave the system in a consistant state at
 all times should any component fail.  Any skye process can fail at any time
@@ -598,12 +591,12 @@ tests that required hard links, which SkyeFS does not support.
 \section{Performance Analysis}
 
 \subsection{Method}
-Tests were performed on the Marmot cluster consisting of 128 nodes with two
+Tests were performed on the Marmot cluster consisting of 128 nodes each with two
 single core Opteron CPUs, 16GiB of RAM, one SATA disk and Gigabit Ethernet.
 PVFS was configured with default settings.  In production configurations, we
 expect that PVFS would be run on fast disk arrays.  To prevent the single 7200
 RPM disks available from artificially limiting throughput, we ran all
-experiments with PVFS configured to use a tmpfs for storage.  In each
+experiments with PVFS configured to use a tmpfs for storage.\cite{tmpfs}  In each
 experiment, both the clients and servers were located on the same set of
 machines
 
@@ -634,7 +627,7 @@ prevent this problem.
 
 We note that the use of FUSE turns each \code{mknod} into a pair of
 \code{lookup} and \code{mknod} requests.  The use of the SkyeFS operations
-directly, e.g. as part of a shared library, might be able to drastically
+directly, i.e. as part of a shared library, might be able to drastically
 improve this performance by avoiding the superfluous \code{lookup}.
 
 \subsection{Readdir}
@@ -651,8 +644,8 @@ single client to read all the entries in the directory.  We repeated this
 experiment with 8, 16, and 32 servers.
 
 The client was able to complete a \code{readdir} for a directory with 1000
-entries in 0.1 seconds.  As expected, this increased slightly worse than
-linearly as the number of entries and partitions increased.  In the case of
+entries in 0.1 seconds.  As expected, this increased slightly 
+super linearly as the number of entries and partitions increased.  In the case of
 200k entries, a \code{readdir} took approximately 2.4 seconds.  No significant
 difference in performance was noted between the different server
 configurations.
@@ -662,7 +655,7 @@ for each partition in parallel.
 
 \subsection{FUSE Low Level API}
 Our initial prototype system used the standard FUSE ``high level'' API.  This
-API provides a full pathname for every operation.  As a result, each
+API provides a full pathname in every callback.  As a result, each
 \code{mknod} call in our file creation experiment required resolving the PVFS
 path from the root of the filesystem.  This created an excessive amount of
 traffic on the server responsible for the filesystem root and bottlenecked the
@@ -672,8 +665,8 @@ are to be created.
 
 \subsection{SkyeFS Client and PVFS}
 Our initial prototype included a fully multi-threaded client.  However, we
-quickly noticed that executing many operations in parallel (for example,
-using \code{make -j8} would result in long stalls while executing PVFS calls.
+quickly noticed that executing many operations in parallel (e.g. using
+\code{make -j8}) would result in long stalls while executing PVFS calls.
 To work around this problem, we currently run the client in the single
 threaded FUSE mode.
 
@@ -688,6 +681,7 @@ state across asynchronous PVFS calls.
 \subsection{SkyeFS Server and PVFS}
 The \code{skye\_server} is based on the initial Giga+ prototype and uses a
 single thread to handle each incoming RPC connection.  As a result, it is easy
+in our experiments
 for upwards of 100 client operations to be in flight concurrently.  The PVFS
 system interface keeps an array of state machines for all outstanding
 operations in the address space.  All threads which have an in-flight
@@ -697,7 +691,7 @@ the lock drives progress on all state machines in the array.
 The first problem that results from this design is that the array is of
 limited size.  Currently, the PVFS code statically defines the array of state
 machines to be of length 256.  If an incoming operation would overflow this
-array, an assertion is tripped.  To avoid tripping this insertion we
+array, an assertion is tripped.  To avoid tripping this assertion we
 implemented flow control in the form of a semaphore.  When the server starts
 the semaphore is initialized to a small value.  When a thread receives an RPC
 request, it downs the semaphore before issuing any PVFS requests.  When the
@@ -706,7 +700,7 @@ more than the semaphore's initial value threads from issuing PVFS requests
 concurrently.  In practice, we found that we needed to set this initial value
 as low as 32 to avoid tripping the assert.
 
-The other problem with this design is that it does not guarantee fairness to
+The other problem with the PVFS client design is that it does not guarantee fairness to
 the requests on the array.  This means that while a request may have
 completed, the requesting thread may not notice this for a very long time.
 This introduces significant jitter into client response times and slows the
@@ -717,7 +711,7 @@ Our testing indicated that this value is optimal in the 32 server case.
 
 \subsection{Split Performance}
 \label{section:splitperf}
-During a split the split thread must issue \code{readdir} calls to the
+During a split, the split thread must issue \code{readdir} calls to the
 partition which is being split.  While this is happening, additional creates
 may be issued against that partition.  We found that without external
 synchronization, this pattern of requests results in very poor PVFS
@@ -737,7 +731,7 @@ directory listings took between 2 and 12 seconds to complete with a median of
 7 seconds.
 
 In our create-synchronized model, each of the 10 threads that issue creates
-synchronizes on a single mutex such that only one create is every in flight at
+synchronizes on a single mutex such that only one create is ever in flight at
 a time.  With this model, 41 seconds were required to create the files and the
 listings took between 2 and 20 seconds to complete.
 
@@ -795,6 +789,11 @@ NetApp, Inc., Oracle Corporation, Panasas, Riverbed, Samsung Information
 Systems America, Seagate Technology, STEC, Inc., Symantec Corporation, VMware,
 Inc., Western Digital) for their interest and support.
 
+\section*{Source Code}
+The source code for SkyeFS is available under the terms of the GNU Lesser
+General Public License.  It can be downloaded at
+\url{https://github.com/achivetta/skyefs}.
+
 \begin{thebibliography}{9}
 
   \bibitem{gigaplus}
@@ -821,7 +820,11 @@ Inc., Western Digital) for their interest and support.
     FUSE. Filesystem in Userspace. \url{http://fuse.sf.net}
 
   \bibitem{fstest}
-  Pawel Dawidek.  fstest from FreeBSD.  \url{http://people.freebsd.org/~pjd/fstest/}
+    Pawel Dawidek.  fstest from FreeBSD.  \url{http://people.freebsd.org/~pjd/fstest/}
+  
+  \bibitem{tmpfs}
+    tmpfs: a file system which keeps all files in virtual memory.
+    \url{http://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt}
 
 \end{thebibliography}
 \end{document}
